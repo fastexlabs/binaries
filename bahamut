@@ -1,0 +1,384 @@
+#!/bin/bash
+
+path=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+action=""
+network=""
+address=""
+version=""
+binaries_latest_version=""
+os=""
+execution="execution"
+github_user_name="fastexlabs"
+github_directory_name="binaries"
+execution_pid=`pidof "$execution" | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1`
+process_info_execution=`ps -ef | grep "$execution" | grep "$execution_pid" 2>&1`
+execution_binary_url="https://github.com/fastexlabs/binaries/releases/download/"
+
+declare -A ports
+ports=( [mainnet.port]=30303
+        [mainnet.p2p-udp-port]=12000
+        [mainnet.p2p-tcp-port]=13000
+        [mainnet.grpc-gateway-port]=7500
+        [mainnet.rpc-port]=4000
+        [mainnet.http]=8545 
+        [mainnet.ws]=8546
+        [mainnet.authrpc]=8551
+        [oasis.port]=30304
+        [oasis.p2p-udp-port]=12001
+        [oasis.p2p-tcp-port]=13001
+        [oasis.grpc-gateway-port]=7501
+        [oasis.rpc-port]=4001
+        [oasis.http]=8547
+        [oasis.ws]=8548
+        [oasis.authrpc]=8552 )
+
+    function red()
+{
+    echo -e "\033[91m$1\033[0m"
+}
+
+function green()
+{
+    echo -e "\033[92m$1\033[0m"
+}
+
+function yellow()
+{
+    echo -e "\033[93m$1\033[0m"
+}
+
+function blue()
+{
+    echo -e "\033[94m$1\033[0m"
+}
+
+function error
+{
+    echo "Error: $1"
+}
+
+function warning
+{
+    echo "Warning: $1"
+}
+
+function info
+{
+    echo "Info: $1"
+}
+
+function print_help
+{
+    #Name:
+    echo "Name:"
+    echo -e "\tThis script manipulates over Fastex blockchain."
+    echo -e "\tThe execution layer client that operates FastexChain blockchain written in Go. This means running execution turns a computer into an FastexChain node."
+    echo -e "\tPrysm is an implementation of the proof-of-stake-and-activity consensus specification." 
+    #Usage:
+    echo -e "\n"
+    echo "Usage:"
+    echo -e "\tbahamut OPTIONS [arguments]" 
+    #Mandatory options
+    echo -e "\n"
+    echo "Mandatory OPTIONS:"
+    echo -e "\tinstall|start|stop|restart|status - Main action to be performed."
+    echo -e "\t-n, --network - Necessary to connect to the network. Network can be mainnet or testnet."
+    #Arguments:
+    echo -e "\n"
+    echo "arguments:"
+    echo -e "\t--help, -h - Show help."
+    #Examples
+    echo -e "\n"
+    echo -e "Examples:"
+    echo -e "\t- ./bahamut start -n=testnet"
+    echo -e "\t- ./bahamut stop -n mainnet"
+}
+
+function check_network()
+{
+    if [ "$network" != "mainnet" ] && [ "$network" != "oasis" ]; then
+        error "$(red "Network name must be \"mainnet\",\"oasis\".")"
+        exit 1
+    fi
+}
+
+function get_shift()
+{
+    if [[ $1 != *"="* ]]; then
+        echo 2
+    else
+        echo 1
+    fi
+}
+
+function get_option()
+{
+    if [[ $1 != *"="* ]]; then
+        echo "$2"
+    else
+        echo "${1#*=}"
+    fi
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            print_help
+            exit 0
+            ;;
+        -n|--network|-n=*|--network=*)
+            network=$(get_option $1 $2)
+            shift $(get_shift $1)
+            check_network
+            ;;
+        -v|--version|-v=*|--version=*)
+            version=$(get_option $1 $2)
+            shift $(get_shift $1)
+            ;;
+        --os|--os=*)
+            os=$(get_option $1 $2)
+            shift $(get_shift $1)
+            ;;
+        start|stop|status|restart|install)
+            if ! [ -z "$action" ]; then
+                error "$(red "Please specify only one of start|stop|status|restart|install options!!!")"
+                exit 1
+            fi
+            action=$1
+            shift
+            ;;
+        *)
+            error "$(red "Unknown option $1. Type --help or -h to see the correct options.")"
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$action" ]; then
+    error "$(red "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\" is missing!!!")"
+    info "For more details please use -h|--help option."
+    exit 1
+fi
+
+function read_confirmation()
+{
+    OIFS=$IFS
+    IFS='/'
+    while [ true ]; do
+        read -p "$1 [$2] " -r
+        v=`echo "$REPLY" | tr '[:upper:]' '[:lower:]'`
+        for x in $2; do
+            c=`echo "$x" | tr '[:upper:]' '[:lower:]'`
+                if [ "$c" == "$v" ]; then
+                    IFS=$OIFS
+                    echo $x
+                    return
+                fi
+        done
+    done
+}
+
+function check_install_dependency
+{
+    if ! which openssl > /dev/null 2>&1; then
+        error "$(red "openssl is not found")"
+        exit 1     
+    fi
+}
+
+function check_start_dependency
+{
+    if [ -z "$network" ]; then
+        error "$(red "Network is mandatory option during start. Type --help or -h to see the correct options.")"
+        exit 1
+    fi
+    if ! which wget >/dev/null 2>&1; then
+        error "wget could not be found. You need to install wget to run the script."
+        exit 1
+    fi
+    if ! [ -f $path/Bahamut/$execution ]; then
+        error "${execution} files not found. Please do the following first ./bahamut install"
+        exit 1
+    fi
+    if ! [ -x $path/Bahamut/$execution ]; then 
+        error "${execution} are not executable."
+        exit 1
+    fi
+}
+
+function init_latest_version
+{
+    latest_version=$(curl -s https://api.github.com/repos/$github_user_name/$github_directory_name/tags | grep -oP '"name": "\K[^"]+' | head -1)
+    echo "$latest_version"
+}
+
+function read_confirmation_for_stop
+{
+    if [ $execution_pid ]; then
+        execution_process_name=$execution
+        c=$(read_confirmation "$(red "Do you want to ${action} running ${execution_process_name}?")" "Y/N")
+        if [ "$c" != "Y" ]; then
+            exit 0
+        fi
+    fi
+}
+
+function download_execution
+{
+    info "$(green "Starting ${execution} download process...")"
+    wget $execution_binary_url${binaries_latest_version}/execution-linux-amd64-${binaries_latest_version}.tar.gz > /dev/null 2>&1
+    if ! [ 0 -eq $? ]; then
+        error "$(red "Failed to download file..")"
+        exit 1
+    fi
+}
+
+function extract_execution
+{
+    tar -xzf ${execution}-linux-amd64-${binaries_latest_version}.tar.gz -C $path/Bahamut
+    if ! [ 0 -eq $? ]; then
+        error "$(red "Failed to extract file..")"
+        exit 1
+    fi
+}
+
+function add_execution
+{
+    if [[ $version != "" && $os == "" ]] || [[ $version == "" && $os != "" ]]; then
+        error "If you have added version or os, you need to add both."
+        exit 1
+    fi
+    if [ -z $version ] && [ -z $os ]; then
+        if [ -f $path/Bahamut/$execution ]; then
+            info "$(green "${execution} exist")"
+            exit 0
+        fi
+        binaries_latest_version=$(init_latest_version)
+        download_execution
+        extract_execution
+        rm ${execution}-linux-amd64-${binaries_latest_version}.tar.gz
+        info "$(green "Done")"
+    else
+        info "$(green "Starting execution download process...")"
+        wget "${main_url}/$version/execution-$os.tar.gz" -O - | tar -xzf - -C $path/Bahamut
+        if ! [ 0 -eq $? ]; then
+            error "$(red "Failed to download file..")"
+            exit 1
+        fi
+        info "$(green "Done")"
+    fi
+}
+
+function install_function
+{
+    check_install_dependency
+    mkdir -p $path/Bahamut
+    mkdir -p $path/Bahamut/datadirs/execution
+    mkdir -p $path/Bahamut/log/execution
+    if ! [ -f $path/Bahamut/datadirs/jwt.hex ]; then
+        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/datadirs/jwt.hex
+    fi
+    add_execution
+}
+
+function start_execution
+{
+    info "$(green "Starting new ${execution} process...")"
+    execution_log_file="$path/Bahamut/log/execution/${execution}_`date +\"%Y_%m_%d_%T\"`"
+    nohup $path/Bahamut/$execution \
+        --$network \
+        --port ${ports[${network}.port]} \
+        --http \
+        --http.port ${ports[${network}.http]} \
+        --ws \
+        --ws.port ${ports[${network}.ws]} \
+        --authrpc.port ${ports[${network}.authrpc]} \
+        --datadir=$path/Bahamut/datadirs/execution \
+        --authrpc.jwtsecret=$path/Bahamut/datadirs/jwt.hex > $execution_log_file 2>&1 &
+    info "$(green "Done")"
+}
+
+function start_function
+{
+    check_start_dependency
+    if [ "$execution_pid" ]; then
+        error "$(red "The process ${execution} is already started with pid=${execution_pid}")"
+        exit 1
+    fi
+    start_execution
+}
+
+function kill_process
+{
+    if [ "$2" ]; then
+        count=0
+        info "$(green "Stopping ${1} pid=${2}...")"
+        kill -9 $2
+        while ps -p $2 > /dev/null; do 
+            sleep 2
+            ((count=count + 1))
+            if [[ count -ge 10 ]]; then
+                error "$(red "${1} process does not shut down.")"
+                break
+            fi
+        done
+        info "$(green "Done")"
+    else
+        info "$(blue "There is no ${1} running process")"
+    fi
+}
+
+function stop_function
+{
+    read_confirmation_for_stop
+    kill_process $execution $execution_pid
+    execution_pid=""
+}
+
+function init_network
+{
+    if [[ ${process_info_execution} == *"--mainnet"* ]]; then
+        network="mainnet"
+    else
+        network="oasis"
+    fi
+}
+
+function restart_function
+{
+    init_network
+    stop_function
+    start_function
+}
+
+function execution_syncing_status
+{
+    init_network
+    if [ "$execution_pid" ]; then
+        info "$(green "${execution} running: pid=${execution_pid}")"
+        execution_json=$(curl -s \
+        -H "Content-Type: application/json" \
+        -X POST \
+        --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
+        127.0.0.1:${ports[${network}.http]})
+    if echo "$execution_json" | grep -q '"result":false'; then
+        info "$(green "${execution} synced")"
+    else
+        highestBlock=$(echo "$execution_json" | grep -o '"highestBlock":"[^"]*"' | cut -d '"' -f 4)
+        currentBlock=$(echo "$execution_json" | grep -o '"currentBlock":"[^"]*"' | cut -d '"' -f 4)
+        decimal_highestBlock=$(printf "%d" "$highestBlock")
+        decimal_currentBlock=$(printf "%d" "$currentBlock")
+        result=$((decimal_currentBlock * 100 / decimal_highestBlock))
+        info "$(green "${execution} is syncing $result%")"
+    fi
+    else
+        info "$(blue "${execution} stopped")"
+    fi
+}
+
+function status_function
+{
+    execution_syncing_status
+}
+
+${action}_function
