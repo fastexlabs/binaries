@@ -33,7 +33,7 @@ chmod +x bahamut
 ./bahamut install
 ```
 
-This command will download the latest Caravan binaries from the tagged releases in the execution layer repository.
+This command will download the latest Caravan binaries from the tagged releases in the execution layer repository. After the install added Bahamut/sahara/sahara_config.toml and Bahamut/oasis/oasis_config.toml config files, in which you can change ports.
 
 ## Usage
 
