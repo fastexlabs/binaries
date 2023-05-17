@@ -7,6 +7,8 @@ address=""
 version=""
 binaries_latest_version=""
 os=""
+oasis_config_path="$path/Bahamut/oasis/oasis_config.toml"
+sahara_config_path="$path/Bahamut/sahara/sahara_config.toml"
 execution="execution"
 github_user_name="fastexlabs"
 github_directory_name="binaries"
@@ -14,25 +16,7 @@ execution_pid=`pidof "$execution" | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1
 process_info_execution=`ps -ef | grep "$execution" | grep "$execution_pid" 2>&1`
 execution_binary_url="https://github.com/fastexlabs/binaries/releases/download/"
 
-declare -A ports
-ports=( [mainnet.port]=30303
-        [mainnet.p2p-udp-port]=12000
-        [mainnet.p2p-tcp-port]=13000
-        [mainnet.grpc-gateway-port]=7500
-        [mainnet.rpc-port]=4000
-        [mainnet.http]=8545 
-        [mainnet.ws]=8546
-        [mainnet.authrpc]=8551
-        [oasis.port]=30304
-        [oasis.p2p-udp-port]=12001
-        [oasis.p2p-tcp-port]=13001
-        [oasis.grpc-gateway-port]=7501
-        [oasis.rpc-port]=4001
-        [oasis.http]=8547
-        [oasis.ws]=8548
-        [oasis.authrpc]=8552 )
-
-    function red()
+function red()
 {
     echo -e "\033[91m$1\033[0m"
 }
@@ -54,17 +38,17 @@ function blue()
 
 function error
 {
-    echo "Error: $1"
+    echo "$(red "Error: ")$1"
 }
 
 function warning
 {
-    echo "Warning: $1"
+    echo "$(blue "Warning: ")$1"
 }
 
 function info
 {
-    echo "Info: $1"
+    echo "$(green "Info: ")$1"
 }
 
 function print_help
@@ -82,7 +66,7 @@ function print_help
     echo -e "\n"
     echo "Mandatory OPTIONS:"
     echo -e "\tinstall|start|stop|restart|status - Main action to be performed."
-    echo -e "\t-n, --network - Necessary to connect to the network. Network can be mainnet or testnet."
+    echo -e "\t-n, --network - Necessary to connect to the network. Network can be mainnet or oasis."
     #Arguments:
     echo -e "\n"
     echo "arguments:"
@@ -90,14 +74,14 @@ function print_help
     #Examples
     echo -e "\n"
     echo -e "Examples:"
-    echo -e "\t- ./bahamut start -n=testnet"
-    echo -e "\t- ./bahamut stop -n mainnet"
+    echo -e "\t- ./bahamut start -n=oasis"
+    echo -e "\t- ./bahamut stop"
 }
 
 function check_network()
 {
-    if [ "$network" != "mainnet" ] && [ "$network" != "oasis" ]; then
-        error "$(red "Network name must be \"mainnet\",\"oasis\".")"
+    if [ "$network" != "mainnet" ] && [ "$network" != "oasis" ] && [ "$network" != "sahara" ]; then
+        error "Network name must be \"mainnet\",\"oasis\"\"sahara\"."
         exit 1
     fi
 }
@@ -141,21 +125,21 @@ while [[ $# -gt 0 ]]; do
             ;;
         start|stop|status|restart|install)
             if ! [ -z "$action" ]; then
-                error "$(red "Please specify only one of start|stop|status|restart|install options!!!")"
+                error "Please specify only one of start|stop|status|restart|install options!!!"
                 exit 1
             fi
             action=$1
             shift
             ;;
         *)
-            error "$(red "Unknown option $1. Type --help or -h to see the correct options.")"
+            error "Unknown option $1. Type --help or -h to see the correct options."
             exit 1
             ;;
     esac
 done
 
 if [ -z "$action" ]; then
-    error "$(red "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\" is missing!!!")"
+    error "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\" is missing!!!"
     info "For more details please use -h|--help option."
     exit 1
 fi
@@ -181,7 +165,7 @@ function read_confirmation()
 function check_install_dependency
 {
     if ! which openssl > /dev/null 2>&1; then
-        error "$(red "openssl is not found")"
+        error "openssl is not found"
         exit 1     
     fi
 }
@@ -189,19 +173,24 @@ function check_install_dependency
 function check_start_dependency
 {
     if [ -z "$network" ]; then
-        error "$(red "Network is mandatory option during start. Type --help or -h to see the correct options.")"
+        error "Network is mandatory option during start. Type --help or -h to see the correct options."
         exit 1
     fi
     if ! which wget >/dev/null 2>&1; then
         error "wget could not be found. You need to install wget to run the script."
         exit 1
     fi
-    if ! [ -f $path/Bahamut/$execution ]; then
-        error "${execution} files not found. Please do the following first ./bahamut install"
+    if [ ! -f "$path/Bahamut/$execution" ]; then
+        echo $network
+        error "Execution files not found. Please do the following first ./bahamut install"
         exit 1
     fi
-    if ! [ -x $path/Bahamut/$execution ]; then 
-        error "${execution} are not executable."
+    if [ ! -x "$path/Bahamut/$execution" ]; then 
+        error "Execution are not executable."
+        exit 1
+    fi
+    if [ ! -f "$path/Bahamut/oasis/oasis_config.toml" ] && [ ! -f "$path/Bahamut/sahara/sahara_config.toml" ]; then
+        error "The files oasis_config.toml and sahara_config.toml do not exist. Please do the following first ./bahamut install"
         exit 1
     fi
 }
@@ -225,21 +214,24 @@ function read_confirmation_for_stop
 
 function download_execution
 {
-    info "$(green "Starting ${execution} download process...")"
+    info "$(green "Starting the process of loading ${execution}...")"
     wget $execution_binary_url${binaries_latest_version}/execution-linux-amd64-${binaries_latest_version}.tar.gz > /dev/null 2>&1
     if ! [ 0 -eq $? ]; then
-        error "$(red "Failed to download file..")"
+        error "Failed to download file.."
         exit 1
     fi
+    info "$(green "Done")"
 }
 
 function extract_execution
 {
-    tar -xzf ${execution}-linux-amd64-${binaries_latest_version}.tar.gz -C $path/Bahamut
+    info "$(green "Starting the process of extract ${execution}...")"
+    tar -xzf ${execution}-linux-amd64-${binaries_latest_version}.tar.gz -C $path/Bahamut/${network}
     if ! [ 0 -eq $? ]; then
-        error "$(red "Failed to extract file..")"
+        error "Failed to extract file.."
         exit 1
     fi
+    info "$(green "Done")"
 }
 
 function add_execution
@@ -249,7 +241,7 @@ function add_execution
         exit 1
     fi
     if [ -z $version ] && [ -z $os ]; then
-        if [ -f $path/Bahamut/$execution ]; then
+        if [ -f "$path/Bahamut/${network}/$execution" ]; then
             info "$(green "${execution} exist")"
             exit 0
         fi
@@ -257,44 +249,56 @@ function add_execution
         download_execution
         extract_execution
         rm ${execution}-linux-amd64-${binaries_latest_version}.tar.gz
-        info "$(green "Done")"
-    else
-        info "$(green "Starting execution download process...")"
-        wget "${main_url}/$version/execution-$os.tar.gz" -O - | tar -xzf - -C $path/Bahamut
+    fi
+}
+
+function add_configurations
+{
+    info "$(green "Starting the process of loading configurations...")"
+    if [ ! -f "$path/Bahamut/oasis/oasis_config.toml" ] || [ ! -f "$path/Bahamut/sahara/sahara_config.toml" ]; then
+        wget -P $path/Bahamut/oasis/ "https://raw.githubusercontent.com/fastexlabs/binaries/master/oasis_config.toml" > /dev/null 2>&1
         if ! [ 0 -eq $? ]; then
-            error "$(red "Failed to download file..")"
+            error "Failed to download oasis_config.toml file."
             exit 1
         fi
-        info "$(green "Done")"
+        wget -P $path/Bahamut/sahara/ "https://raw.githubusercontent.com/fastexlabs/binaries/master/sahara_config.toml" > /dev/null 2>&1
+        if ! [ 0 -eq $? ]; then
+            error "Failed to download sahara_config.toml file."
+            exit 1
+        fi
     fi
+    info "$(green "Done")"
 }
 
 function install_function
 {
     check_install_dependency
-    mkdir -p $path/Bahamut
-    mkdir -p $path/Bahamut/datadirs/execution
-    mkdir -p $path/Bahamut/log/execution
-    if ! [ -f $path/Bahamut/datadirs/jwt.hex ]; then
-        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/datadirs/jwt.hex
+    mkdir -p $path/Bahamut/oasis/datadirs/execution
+    mkdir -p $path/Bahamut/sahara/datadirs/execution 
+    mkdir -p $path/Bahamut/oasis/log/execution
+    mkdir -p $path/Bahamut/sahara/log/execution
+    if [ ! -f "$path/Bahamut/oasis/datadirs/jwt.hex" ] || [ ! -f "$path/Bahamut/sahara/datadirs/jwt.hex" ]; then
+        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/oasis/datadirs/jwt.hex
+        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/sahara/datadirs/jwt.hex
     fi
+    add_configurations
     add_execution
 }
 
 function start_execution
 {
+    config=""
     info "$(green "Starting new ${execution} process...")"
-    execution_log_file="$path/Bahamut/log/execution/${execution}_`date +\"%Y_%m_%d_%T\"`"
+    execution_log_file="$path/Bahamut/${network}/log/execution/${execution}_`date +\"%Y_%m_%d_%T\"`"
+    if [ "$network" == "oasis" ]; then
+        config=$oasis_config_path
+    else
+        config=$sahara_config_path
+    fi
     nohup $path/Bahamut/$execution \
-        --$network \
-        --port ${ports[${network}.port]} \
-        --http \
-        --http.port ${ports[${network}.http]} \
-        --ws \
-        --ws.port ${ports[${network}.ws]} \
-        --authrpc.port ${ports[${network}.authrpc]} \
-        --datadir=$path/Bahamut/datadirs/execution \
-        --authrpc.jwtsecret=$path/Bahamut/datadirs/jwt.hex > $execution_log_file 2>&1 &
+    --$network \
+    --authrpc.jwtsecret=$path/Bahamut/${network}/datadirs/jwt.hex \
+    --config "$config" > $execution_log_file 2>&1 &
     info "$(green "Done")"
 }
 
@@ -302,7 +306,7 @@ function start_function
 {
     check_start_dependency
     if [ "$execution_pid" ]; then
-        error "$(red "The process ${execution} is already started with pid=${execution_pid}")"
+        error "The process ${execution} is already started with pid=${execution_pid}"
         exit 1
     fi
     start_execution
@@ -313,12 +317,12 @@ function kill_process
     if [ "$2" ]; then
         count=0
         info "$(green "Stopping ${1} pid=${2}...")"
-        kill -9 $2
+        kill -15 $2
         while ps -p $2 > /dev/null; do 
             sleep 2
             ((count=count + 1))
             if [[ count -ge 10 ]]; then
-                error "$(red "${1} process does not shut down.")"
+                error "${1} process does not shut down."
                 break
             fi
         done
@@ -337,10 +341,10 @@ function stop_function
 
 function init_network
 {
-    if [[ ${process_info_execution} == *"--mainnet"* ]]; then
-        network="mainnet"
-    else
+    if [[ ${process_info_execution} == *"--oasis"* ]]; then
         network="oasis"
+    else
+        network="mainnet"
     fi
 }
 
@@ -354,23 +358,29 @@ function restart_function
 function execution_syncing_status
 {
     init_network
+    http_port=""
+    if [ "oasis" == "$network" ]; then
+        http_port="8545"
+    else
+        http_port="8546"
+    fi
     if [ "$execution_pid" ]; then
         info "$(green "${execution} running: pid=${execution_pid}")"
         execution_json=$(curl -s \
         -H "Content-Type: application/json" \
         -X POST \
         --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
-        127.0.0.1:${ports[${network}.http]})
-    if echo "$execution_json" | grep -q '"result":false'; then
-        info "$(green "${execution} synced")"
-    else
-        highestBlock=$(echo "$execution_json" | grep -o '"highestBlock":"[^"]*"' | cut -d '"' -f 4)
-        currentBlock=$(echo "$execution_json" | grep -o '"currentBlock":"[^"]*"' | cut -d '"' -f 4)
-        decimal_highestBlock=$(printf "%d" "$highestBlock")
-        decimal_currentBlock=$(printf "%d" "$currentBlock")
-        result=$((decimal_currentBlock * 100 / decimal_highestBlock))
-        info "$(green "${execution} is syncing $result%")"
-    fi
+        127.0.0.1:${http_port})
+        if echo "$execution_json" | grep -q '"result":false'; then
+            info "$(green "${execution} synced")"
+        else
+            highestBlock=$(echo "$execution_json" | grep -o '"highestBlock":"[^"]*"' | cut -d '"' -f 4)
+            currentBlock=$(echo "$execution_json" | grep -o '"currentBlock":"[^"]*"' | cut -d '"' -f 4)
+            decimal_highestBlock=$(printf "%d" "$highestBlock")
+            decimal_currentBlock=$(printf "%d" "$currentBlock")
+            result=$((decimal_currentBlock * 100 / decimal_highestBlock))
+            info "$(green "${execution} is syncing $result%")"
+        fi
     else
         info "$(blue "${execution} stopped")"
     fi
