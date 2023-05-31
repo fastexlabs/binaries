@@ -8,7 +8,7 @@ version=""
 binaries_latest_version=""
 os=""
 oasis_config_path="$path/Bahamut/oasis/oasis_config.toml"
-sahara_config_path="$path/Bahamut/sahara/sahara_config.toml"
+sahara_config_path="$path/Bahamut/mainnet/sahara_config.toml"
 execution="execution"
 github_user_name="fastexlabs"
 github_directory_name="binaries"
@@ -80,8 +80,8 @@ function print_help
 
 function check_network()
 {
-    if [ "$network" != "mainnet" ] && [ "$network" != "oasis" ] && [ "$network" != "sahara" ]; then
-        error "Network name must be \"mainnet\",\"oasis\"\"sahara\"."
+    if [ "$network" != "mainnet" ] && [ "$network" != "oasis" ]; then
+        error "Network name must be \"mainnet\",\"oasis\"."
         exit 1
     fi
 }
@@ -189,7 +189,7 @@ function check_start_dependency
         error "Execution are not executable."
         exit 1
     fi
-    if [ ! -f "$path/Bahamut/oasis/oasis_config.toml" ] && [ ! -f "$path/Bahamut/sahara/sahara_config.toml" ]; then
+    if [ ! -f "$path/Bahamut/oasis/oasis_config.toml" ] && [ ! -f "$path/Bahamut/mainnet/sahara_config.toml" ]; then
         error "The files oasis_config.toml and sahara_config.toml do not exist. Please do the following first ./bahamut install"
         exit 1
     fi
@@ -255,13 +255,13 @@ function add_execution
 function add_configurations
 {
     info "$(green "Starting the process of loading configurations...")"
-    if [ ! -f "$path/Bahamut/oasis/oasis_config.toml" ] || [ ! -f "$path/Bahamut/sahara/sahara_config.toml" ]; then
+    if [ ! -f "$path/Bahamut/oasis/oasis_config.toml" ] || [ ! -f "$path/Bahamut/mainnet/sahara_config.toml" ]; then
         wget -P $path/Bahamut/oasis/ "https://raw.githubusercontent.com/fastexlabs/binaries/master/oasis_config.toml" > /dev/null 2>&1
         if ! [ 0 -eq $? ]; then
             error "Failed to download oasis_config.toml file."
             exit 1
         fi
-        wget -P $path/Bahamut/sahara/ "https://raw.githubusercontent.com/fastexlabs/binaries/master/sahara_config.toml" > /dev/null 2>&1
+        wget -P $path/Bahamut/mainnet/ "https://raw.githubusercontent.com/fastexlabs/binaries/master/sahara_config.toml" > /dev/null 2>&1
         if ! [ 0 -eq $? ]; then
             error "Failed to download sahara_config.toml file."
             exit 1
@@ -274,12 +274,12 @@ function install_function
 {
     check_install_dependency
     mkdir -p $path/Bahamut/oasis/datadirs/execution
-    mkdir -p $path/Bahamut/sahara/datadirs/execution 
+    mkdir -p $path/Bahamut/mainnet/datadirs/execution 
     mkdir -p $path/Bahamut/oasis/log/execution
-    mkdir -p $path/Bahamut/sahara/log/execution
-    if [ ! -f "$path/Bahamut/oasis/datadirs/jwt.hex" ] || [ ! -f "$path/Bahamut/sahara/datadirs/jwt.hex" ]; then
+    mkdir -p $path/Bahamut/mainnet/log/execution
+    if [ ! -f "$path/Bahamut/oasis/datadirs/jwt.hex" ] || [ ! -f "$path/Bahamut/mainnet/datadirs/jwt.hex" ]; then
         openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/oasis/datadirs/jwt.hex
-        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/sahara/datadirs/jwt.hex
+        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/mainnet/datadirs/jwt.hex
     fi
     add_configurations
     add_execution
