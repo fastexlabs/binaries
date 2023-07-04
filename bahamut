@@ -3,18 +3,26 @@
 path=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 action=""
 network=""
-address=""
 version=""
-binaries_latest_version=""
-os=""
-oasis_config_path="$path/Bahamut/oasis/oasis_config.toml"
-sahara_config_path="$path/Bahamut/mainnet/sahara_config.toml"
+github_version_count=0
 execution="execution"
-github_user_name="fastexlabs"
-github_directory_name="binaries"
+script_name="bahamut"
+network_names="oasis sahara"
+oasis_config_name="oasis_config.toml"
+sahara_config_name="sahara_config.toml"
+download_path="$path/download"
+mainnet_directory="$path/Bahamut/mainnet"
+oasis_config_file="$path/Bahamut/oasis/${oasis_config_name}"
+sahara_config_file="$path/Bahamut/sahara/${sahara_config_name}"
 execution_pid=`pidof "$execution" | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1`
 process_info_execution=`ps -ef | grep "$execution" | grep "$execution_pid" 2>&1`
-execution_binary_url="https://github.com/fastexlabs/binaries/releases/download/"
+
+github_execution="fastexlabs/caravan"
+github_binaries="fastexlabs/binaries"
+binary_url="https://github.com/${github_binaries}/releases/download"
+oasis_config_url="https://raw.githubusercontent.com/${github_binaries}/master/${oasis_config_name}"
+sahara_config_url="https://raw.githubusercontent.com/${github_binaries}/master/${sahara_config_name}"
+bahamut_script_url="https://raw.githubusercontent.com/${github_binaries}/master/${script_name}"
 
 function red()
 {
@@ -65,23 +73,30 @@ function print_help
     #Mandatory options
     echo -e "\n"
     echo "Mandatory OPTIONS:"
-    echo -e "\tinstall|start|stop|restart|status - Main action to be performed."
-    echo -e "\t-n, --network - Necessary to connect to the network. Network can be mainnet or oasis."
+    echo -e "\tinstall|start|stop|restart|status|update - Main action to be performed."
+    echo -e "\tstart - Running the execution network."
+    echo -e "\tstop - Stoped the execution network."
+    echo -e "\tstatus - Shows the execution network status."
+    echo -e "\tinstall - Install the execution network dependencies needed for start."
+    echo -e "\tupdate - Update the execution binary and native script."
+    echo -e "\t-n, --network - Necessary to connect to the network. Network can be (mainnet, sahara) or oasis."
     #Arguments:
     echo -e "\n"
     echo "arguments:"
     echo -e "\t--help, -h - Show help."
+    echo -e "\t--version, -v - Give the execution version, if not it loads the latest version."
     #Examples
     echo -e "\n"
     echo -e "Examples:"
     echo -e "\t- ./bahamut start -n=oasis"
+    echo -e "\t- ./bahamut update"
     echo -e "\t- ./bahamut stop"
 }
 
 function check_network()
 {
-    if [ "$network" != "mainnet" ] && [ "$network" != "oasis" ]; then
-        error "Network name must be \"mainnet\",\"oasis\"."
+    if [ "$network" != "mainnet" ] && [ "$network" != "oasis" ] && [ "$network" != "sahara" ]; then
+        error "Network name must be \"mainnet\",\"oasis\"\"sahara\"."
         exit 1
     fi
 }
@@ -118,14 +133,15 @@ while [[ $# -gt 0 ]]; do
         -v|--version|-v=*|--version=*)
             version=$(get_option $1 $2)
             shift $(get_shift $1)
+            ((github_version_count=github_version_count + 1))
             ;;
         --os|--os=*)
             os=$(get_option $1 $2)
             shift $(get_shift $1)
             ;;
-        start|stop|status|restart|install)
+        start|stop|status|restart|install|update)
             if ! [ -z "$action" ]; then
-                error "Please specify only one of start|stop|status|restart|install options!!!"
+                error "Please specify only one of start|stop|status|restart|install|update options!!!"
                 exit 1
             fi
             action=$1
@@ -139,7 +155,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$action" ]; then
-    error "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\" is missing!!!"
+    error "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\", \"update\" is missing!!!"
     info "For more details please use -h|--help option."
     exit 1
 fi
@@ -168,6 +184,27 @@ function check_install_dependency
         error "openssl is not found"
         exit 1     
     fi
+    if ! which wget >/dev/null 2>&1; then
+        error "The wget could not be found. You need to install wget to run the script."
+        exit 1
+    fi
+    if ! which curl >/dev/null 2>&1; then
+        error "The curl could not be found. You need to install curl to run the script."
+        exit 1
+    fi
+
+}
+
+function check_mainnet_network
+{
+    if [ -z "$execution_pid" ] && [ -d "$mainnet_directory" ]; then
+        rm -rf $path/Bahamut/sahara
+        mv $path/Bahamut/mainnet $path/Bahamut/sahara
+    fi
+    if [ "$network" == "mainnet" ]; then
+        network="sahara"
+    fi
+
 }
 
 function check_start_dependency
@@ -176,159 +213,216 @@ function check_start_dependency
         error "Network is mandatory option during start. Type --help or -h to see the correct options."
         exit 1
     fi
-    if ! which wget >/dev/null 2>&1; then
-        error "wget could not be found. You need to install wget to run the script."
+    if [ ! -f "$path/Bahamut/${1}" ]; then
+        error "The ${1} files not found. Please do the following first ./bahamut install"
         exit 1
     fi
-    if [ ! -f "$path/Bahamut/$execution" ]; then
-        echo $network
-        error "Execution files not found. Please do the following first ./bahamut install"
+    if [ ! -x "$path/Bahamut/${1}" ]; then
+        error "The ${1} are not executable. Please do the following first ./bahamut install"
         exit 1
     fi
-    if [ ! -x "$path/Bahamut/$execution" ]; then 
-        error "Execution are not executable."
-        exit 1
-    fi
-    if [ ! -f "$path/Bahamut/oasis/oasis_config.toml" ] && [ ! -f "$path/Bahamut/mainnet/sahara_config.toml" ]; then
+    if [ ! -f "$oasis_config_file" ] && [ ! -f "$sahara_config_file" ]; then
         error "The files oasis_config.toml and sahara_config.toml do not exist. Please do the following first ./bahamut install"
         exit 1
     fi
 }
 
-function init_latest_version
+function remove_spaces
 {
-    latest_version=$(curl -s https://api.github.com/repos/$github_user_name/$github_directory_name/tags | grep -oP '"name": "\K[^"]+' | head -1)
-    echo "$latest_version"
+    echo "(^|[[:space:]])"${1}"($|[[:space:]])"
 }
+
+function check_versions_flag
+{
+    if [ -z "$version" ]; then
+        http_status=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/$github_binaries/tags) > /dev/null 2>&1
+        if [ "200" != "$http_status" ]; then
+            error "The github latest tag is not found"
+            exit 1
+        fi
+
+    fi
+    if [ $github_version_count -eq 1 ]; then
+        tags=$(curl -s https://api.github.com/repos/$github_binaries/tags | grep -oP '"name": "\K[^"]+')
+        if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            error "Invalid github version number format. Please use the format v1.0.0."
+            exit 1
+        else
+            if ! [[ $tags =~ $(remove_spaces $version) ]]; then
+                error "The entered version was not found on github"
+                exit 1
+            fi
+        fi
+    fi
+}
+
+
+function init_binary_version
+{
+    if [ -z "$version" ]; then
+        binary_latest_tag=$(curl -s https://api.github.com/repos/$github_binaries/tags | grep -oP '"name": "\K[^"]+' | head -1)
+        echo "$binary_latest_tag"
+    else
+        echo "$version"
+    fi
+}
+
 
 function read_confirmation_for_stop
 {
     if [ $execution_pid ]; then
-        execution_process_name=$execution
-        c=$(read_confirmation "$(red "Do you want to ${action} running ${execution_process_name}?")" "Y/N")
+        c=$(read_confirmation "$(red "Do you want to ${action} running ${execution}?")" "Y/N")
         if [ "$c" != "Y" ]; then
             exit 0
         fi
     fi
 }
 
-function download_execution
+function download_binaries_and_extract
 {
-    info "$(green "Starting the process of loading ${execution}...")"
-    wget $execution_binary_url${binaries_latest_version}/execution-linux-amd64-${binaries_latest_version}.tar.gz > /dev/null 2>&1
+    if [ "install" == "$action" ] && [ -f "$path/Bahamut/$1" ]; then
+        info "The $1 binary is exist."
+    else
+        echo -ne $(info "Starting the process of loading ${1} binaries...")
+        binary_version=$(init_binary_version)
+        json=$(curl -s -i -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$github_binaries/releases/tags/${binary_version}")
+        urls=$(grep browser_download_url <<< "$json" | sed 's/.*"browser_download_url": "\(.*\)"/\1/')
+        for url in $urls; do
+            wget -P $download_path $url > /dev/null 2>&1
+            if ! [ 0 -eq $? ]; then
+                error "Failed to download the binaries."
+                exit 1
+            fi
+        done
+        echo " Done"
+        echo -ne $(info "Starting the process of extract ${1} binaries...")
+        cd $download_path
+        for file in $(ls | grep tar.gz); do
+            tar -xzf $file > /dev/null 2>&1 && rm $file > /dev/null 2>&1
+            if ! [ 0 -eq $? ]; then
+                error "Failed to extract or remove the binaries file."
+                exit 1
+            fi
+        done
+        echo " Done"
+        cd - > /dev/null
+    fi
+}
+
+function download_bahamut_script
+{
+    echo -ne $(info "Starting the process of loading ${script_name} script...")
+    wget -P $download_path $bahamut_script_url > /dev/null 2>&1
     if ! [ 0 -eq $? ]; then
-        error "Failed to download file.."
+        error "Failed to download the ${script_name} script."
         exit 1
     fi
-    info "$(green "Done")"
+    echo " Done"
 }
 
-function extract_execution
+function download_configurations
 {
-    info "$(green "Starting the process of extract ${execution}...")"
-    tar -xzf ${execution}-linux-amd64-${binaries_latest_version}.tar.gz -C $path/Bahamut/${network}
-    if ! [ 0 -eq $? ]; then
-        error "Failed to extract file.."
-        exit 1
-    fi
-    info "$(green "Done")"
-}
-
-function add_execution
-{
-    if [[ $version != "" && $os == "" ]] || [[ $version == "" && $os != "" ]]; then
-        error "If you have added version or os, you need to add both."
-        exit 1
-    fi
-    if [ -z $version ] && [ -z $os ]; then
-        if [ -f "$path/Bahamut/${network}/$execution" ]; then
-            info "$(green "${execution} exist")"
-            exit 0
-        fi
-        binaries_latest_version=$(init_latest_version)
-        download_execution
-        extract_execution
-        rm ${execution}-linux-amd64-${binaries_latest_version}.tar.gz
-    fi
-}
-
-function add_configurations
-{
-    info "$(green "Starting the process of loading configurations...")"
-    if [ ! -f "$path/Bahamut/oasis/oasis_config.toml" ] || [ ! -f "$path/Bahamut/mainnet/sahara_config.toml" ]; then
-        wget -P $path/Bahamut/oasis/ "https://raw.githubusercontent.com/fastexlabs/binaries/master/oasis_config.toml" > /dev/null 2>&1
+    config=${1}_config_url
+    if [ "install" == "$action" ] && [ -f "${!config}" ]; then
+        info "The $1 config file is exist."
+    else
+        echo -ne $(info "Starting the process of loading $1 config file...")
+        wget -P $download_path ${!config} > /dev/null 2>&1
         if ! [ 0 -eq $? ]; then
-            error "Failed to download oasis_config.toml file."
+            error "Failed to download the ${1} config file."
             exit 1
         fi
-        wget -P $path/Bahamut/mainnet/ "https://raw.githubusercontent.com/fastexlabs/binaries/master/sahara_config.toml" > /dev/null 2>&1
-        if ! [ 0 -eq $? ]; then
-            error "Failed to download sahara_config.toml file."
-            exit 1
-        fi
+        echo " Done"
     fi
-    info "$(green "Done")"
+}
+
+function move_binaries
+{
+    if [ -f "$download_path/$1" ]; then
+        rm -rf $path/Bahamut/$1
+        mv $download_path/$1 $path/Bahamut/
+    fi
+}
+
+
+function install_action_files_transfer
+{
+    config_name=${1}_config_name
+    if [ -f "$download_path/${!config_name}" ]; then
+        mv $download_path/${!config_name} $path/Bahamut/${1}
+    fi
+}
+
+function update_action_files_transfer
+{
+    if [ -f "$download_path/$script_name" ]; then
+        mv $script_name $path
+    fi
 }
 
 function install_function
 {
     check_install_dependency
-    mkdir -p $path/Bahamut/oasis/datadirs/execution
-    mkdir -p $path/Bahamut/mainnet/datadirs/execution 
-    mkdir -p $path/Bahamut/oasis/log/execution
-    mkdir -p $path/Bahamut/mainnet/log/execution
-    if [ ! -f "$path/Bahamut/oasis/datadirs/jwt.hex" ] || [ ! -f "$path/Bahamut/mainnet/datadirs/jwt.hex" ]; then
+    check_versions_flag
+    rm -rf $download_path
+    mkdir -p $path/Bahamut/oasis/datadirs/execution $path/Bahamut/sahara/datadirs/execution
+    mkdir -p $path/Bahamut/oasis/log/execution $path/Bahamut/sahara/log/execution
+    mkdir -p $path/download
+    if [ ! -f "$path/Bahamut/oasis/datadirs/jwt.hex" ] || [ ! -f "$path/Bahamut/sahara/datadirs/jwt.hex" ]; then
         openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/oasis/datadirs/jwt.hex
-        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/mainnet/datadirs/jwt.hex
+        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/sahara/datadirs/jwt.hex
     fi
-    add_configurations
-    add_execution
+    for i in $network_names; do
+        download_configurations $i
+        install_action_files_transfer $i
+    done
+    download_binaries_and_extract $execution
+    move_binaries $execution
+    rm -rf $download_path
+    check_mainnet_network
 }
 
 function start_execution
 {
-    config=""
-    info "$(green "Starting new ${execution} process...")"
-    execution_log_file="$path/Bahamut/${network}/log/execution/${execution}_`date +\"%Y_%m_%d_%T\"`"
-    if [ "$network" == "oasis" ]; then
-        config=$oasis_config_path
-    else
-        config=$sahara_config_path
-    fi
-    nohup $path/Bahamut/$execution \
+    check_mainnet_network
+    echo -ne $(info "Starting the new ${1} process...")
+    execution_log_file="$path/Bahamut/${network}/log/${1}/${1}_`date +\"%Y_%m_%d_%T\"`"
+    config=${network}_config_file
+    nohup $path/Bahamut/$1 \
     --$network \
     --authrpc.jwtsecret=$path/Bahamut/${network}/datadirs/jwt.hex \
-    --config "$config" > $execution_log_file 2>&1 &
-    info "$(green "Done")"
+    --config ${!config} > $execution_log_file 2>&1 &
+    echo " Done"
 }
+
 
 function start_function
 {
-    check_start_dependency
+    check_start_dependency $execution
     if [ "$execution_pid" ]; then
         error "The process ${execution} is already started with pid=${execution_pid}"
         exit 1
     fi
-    start_execution
+    start_execution $execution
 }
 
 function kill_process
 {
     if [ "$2" ]; then
         count=0
-        info "$(green "Stopping ${1} pid=${2}...")"
+        echo -ne $(info "Stopping the ${1} process with pid=${2}...")
         kill -15 $2
         while ps -p $2 > /dev/null; do 
             sleep 2
             ((count=count + 1))
-            if [[ count -ge 10 ]]; then
-                error "${1} process does not shut down."
+            if [[ count -ge 15 ]]; then
+                error "The ${1} process does not shut down."
                 break
             fi
         done
-        info "$(green "Done")"
+        echo " Done"
     else
-        info "$(blue "There is no ${1} running process")"
+        info "There is no ${1} running process."
     fi
 }
 
@@ -344,7 +438,7 @@ function init_network
     if [[ ${process_info_execution} == *"--oasis"* ]]; then
         network="oasis"
     else
-        network="mainnet"
+        network="sahara"
     fi
 }
 
@@ -354,6 +448,22 @@ function restart_function
     stop_function
     start_function
 }
+
+function update_function
+{
+    if [ -d $path/Bahamut ]; then
+        rm -rf $download_path
+        mkdir -p $path/download
+        download_binaries_and_extract $execution
+        move_binaries $execution
+        download_bahamut_script
+        update_action_files_transfer
+        rm -rf $download_path
+    else
+        error "Please do the following first ./bahamut install"
+    fi
+}
+
 
 function execution_syncing_status
 {
