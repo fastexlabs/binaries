@@ -317,6 +317,7 @@ function download_bahamut_script
         error "Failed to download the ${script_name} script."
         exit 1
     fi
+    chmod +x $download_path/$script_name
     echo " Done"
 }
 
@@ -356,7 +357,7 @@ function install_action_files_transfer
 function update_action_files_transfer
 {
     if [ -f "$download_path/$script_name" ]; then
-        mv $script_name $path
+        mv $download_path/$script_name $path
     fi
 }
 
