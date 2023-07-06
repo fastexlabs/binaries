@@ -4,15 +4,15 @@ SyncMode = "snap"
 [Node]
 DataDir = "Bahamut/oasis/datadirs/execution/"
 HTTPHost = "127.0.0.1"
-HTTPPort = 8545
+HTTPPort = 8547
 HTTPVirtualHosts = ["localhost"]
 HTTPModules = ["net", "web3", "eth"]
 AuthAddr = "localhost"
-AuthPort = 8551
+AuthPort = 8552
 AuthVirtualHosts = ["localhost"]
 WSHost = "127.0.0.1"
-WSPort = 8546
+WSPort = 8548
 WSModules = ["net", "web3", "eth"]
 
 [Node.P2P]
-ListenAddr = ":30303"
+ListenAddr = ":30304"

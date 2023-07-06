@@ -4,15 +4,15 @@ SyncMode = "snap"
 [Node]
 DataDir = "Bahamut/sahara/datadirs/execution/"
 HTTPHost = "127.0.0.1"
-HTTPPort = 8546
+HTTPPort = 8545
 HTTPVirtualHosts = ["localhost"]
 HTTPModules = ["net", "web3", "eth"]
 AuthAddr = "localhost"
-AuthPort = 8552
+AuthPort = 8551
 AuthVirtualHosts = ["localhost"]
 WSHost = "127.0.0.1"
-WSPort = 8547
+WSPort = 8546
 WSModules = ["net", "web3", "eth"]
 
 [Node.P2P]
-ListenAddr = ":30304"
+ListenAddr = ":30303"

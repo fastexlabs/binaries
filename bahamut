@@ -63,9 +63,9 @@ function print_help
 {
     #Name:
     echo "Name:"
-    echo -e "\tThis script manipulates over Fastex blockchain."
-    echo -e "\tThe execution layer client that operates FastexChain blockchain written in Go. This means running execution turns a computer into an FastexChain node."
-    echo -e "\tPrysm is an implementation of the proof-of-stake-and-activity consensus specification." 
+    echo -e "\tThis script automatically sets up and runs Caravan - the Execution layer of Fastex chain (Bahamut) blockchain."
+    echo -e "\tThe execution layer client that operates Fastex Chain is written in Go. Running the execution layer helps the user setup and maintain a Caravan node."
+    echo -e "\tThe consensus layer is an implementation of the proof-of-stake-and-activity consensus specification." 
     #Usage:
     echo -e "\n"
     echo "Usage:"
@@ -73,18 +73,18 @@ function print_help
     #Mandatory options
     echo -e "\n"
     echo "Mandatory OPTIONS:"
-    echo -e "\tinstall|start|stop|restart|status|update - Main action to be performed."
-    echo -e "\tstart - Running the execution network."
-    echo -e "\tstop - Stoped the execution network."
-    echo -e "\tstatus - Shows the execution network status."
-    echo -e "\tinstall - Install the execution network dependencies needed for start."
-    echo -e "\tupdate - Update the execution binary and native script."
-    echo -e "\t-n, --network - Necessary to connect to the network. Network can be (mainnet, sahara) or oasis."
+    echo -e "\tinstall|start|stop|restart|status|update - Main action(s) to be performed."
+    echo -e "\tstart - Starts the Caravan node."
+    echo -e "\tstop - Stops the Caravan node."
+    echo -e "\tstatus - Returns the current status of Caravan."
+    echo -e "\tinstall - Installs Caravan dependencies needed for the start."
+    echo -e "\tupdate - Updates Caravan binaries and native scripts."
+    echo -e "\t-n, --network - Necessary to connect to the network. Network can be Sahara (mainnet) or Oasis (testnet)."
     #Arguments:
     echo -e "\n"
     echo "arguments:"
     echo -e "\t--help, -h - Show help."
-    echo -e "\t--version, -v - Give the execution version, if not it loads the latest version."
+    echo -e "\t--version, -v - Manually set the binaries version. Default version is the latest version."
     #Examples
     echo -e "\n"
     echo -e "Examples:"
@@ -192,7 +192,6 @@ function check_install_dependency
         error "The curl could not be found. You need to install curl to run the script."
         exit 1
     fi
-
 }
 
 function check_mainnet_network
@@ -453,6 +452,7 @@ function restart_function
 function update_function
 {
     if [ -d $path/Bahamut ]; then
+        check_versions_flag
         rm -rf $download_path
         mkdir -p $path/download
         download_binaries_and_extract $execution
@@ -471,9 +471,9 @@ function execution_syncing_status
     init_network
     http_port=""
     if [ "oasis" == "$network" ]; then
-        http_port="8545"
+        http_port="8547"
     else
-        http_port="8546"
+        http_port="8545"
     fi
     if [ "$execution_pid" ]; then
         info "$(green "${execution} running: pid=${execution_pid}")"

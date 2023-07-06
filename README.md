@@ -42,7 +42,9 @@ Once you have installed the Caravan execution layer, you can use the bahamut scr
 `./bahamut start`: Starts the Caravan node.\
 `./bahamut stop`: Stops the Caravan node.\
 `./bahamut restart`: Restarts the Caravan node.\
-`./bahamut status`: Returns the status of the Caravan node.
+`./bahamut status`: Returns the status of the Caravan node.\
+`./bahamut Install`: Installs Caravan dependencies needed for the start.\
+`./bahamut Update`: Updates Caravan binaries and native scripts.\
 
 ## Commands
 
@@ -71,6 +73,18 @@ To restart the Caravan node, run:
 To check the status of the Caravan node, run:
 ```bash
 ./bahamut status
+```
+
+### Install the Caravan Node Dependencies
+To install Caravan dependencies needed for the start, run:
+```bash
+./bahamut install
+```
+
+### Update the Caravan Node
+To update the Caravan node, run:
+```bash
+./bahamut update
 ```
 
 ## Options
