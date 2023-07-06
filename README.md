@@ -43,8 +43,8 @@ Once you have installed the Caravan execution layer, you can use the bahamut scr
 `./bahamut stop`: Stops the Caravan node.\
 `./bahamut restart`: Restarts the Caravan node.\
 `./bahamut status`: Returns the status of the Caravan node.\
-`./bahamut Install`: Installs Caravan dependencies needed for the start.\
-`./bahamut Update`: Updates Caravan binaries and native scripts.\
+`./bahamut install`: Installs Caravan dependencies needed for the start.\
+`./bahamut update`: Updates Caravan binaries and native scripts.\
 
 ## Commands
 
