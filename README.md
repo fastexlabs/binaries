@@ -16,7 +16,7 @@ This repository provides a management script for the Bahamut blockchain executio
 
 Ensure that you have the following prerequisites installed on your system:
 
-- [Curl](https://curl.se/download.html) or [Wget](https://www.gnu.org/software/wget/)
+- [Curl](https://curl.se/download.html) and [Wget](https://www.gnu.org/software/wget/)
 
 ## Installation
 

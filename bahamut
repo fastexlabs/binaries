@@ -3,8 +3,7 @@
 path=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 action=""
 network=""
-version=""
-github_version_count=0
+version="v1.1.0"
 execution="execution"
 script_name="bahamut"
 network_names="oasis sahara"
@@ -133,7 +132,6 @@ while [[ $# -gt 0 ]]; do
         -v|--version|-v=*|--version=*)
             version=$(get_option $1 $2)
             shift $(get_shift $1)
-            ((github_version_count=github_version_count + 1))
             ;;
         --os|--os=*)
             os=$(get_option $1 $2)
@@ -233,39 +231,17 @@ function remove_spaces
 
 function check_versions_flag
 {
-    if [ -z "$version" ]; then
-        http_status=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/$github_binaries/tags) > /dev/null 2>&1
-        if [ "200" != "$http_status" ]; then
-            error "The github latest tag is not found"
-            exit 1
-        fi
-
-    fi
-    if [ $github_version_count -eq 1 ]; then
-        tags=$(curl -s https://api.github.com/repos/$github_binaries/tags | grep -oP '"name": "\K[^"]+')
-        if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            error "Invalid github version number format. Please use the format v1.0.0."
-            exit 1
-        else
-            if ! [[ $tags =~ $(remove_spaces $version) ]]; then
-                error "The entered version was not found on github"
-                exit 1
-            fi
-        fi
-    fi
-}
-
-
-function init_binary_version
-{
-    if [ -z "$version" ]; then
-        binary_latest_tag=$(curl -s https://api.github.com/repos/$github_binaries/tags | grep -oP '"name": "\K[^"]+' | head -1)
-        echo "$binary_latest_tag"
+    if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        error "Invalid github version number format. Please use the format v1.0.0."
+        exit 1
     else
-        echo "$version"
+        tags=$(curl -s https://api.github.com/repos/$github_binaries/tags | grep -oP '"name": "\K[^"]+')
+        if ! [[ $tags =~ $(remove_spaces $version) ]]; then
+            error "The entered version was not found on github"
+            exit 1
+        fi
     fi
 }
-
 
 function read_confirmation_for_stop
 {
@@ -283,8 +259,7 @@ function download_binaries_and_extract
         info "The $1 binary is exist."
     else
         echo -ne $(info "Starting the process of loading ${1} binaries...")
-        binary_version=$(init_binary_version)
-        json=$(curl -s -i -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$github_binaries/releases/tags/${binary_version}")
+        json=$(curl -s -i -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$github_binaries/releases/tags/${version}")
         urls=$(grep browser_download_url <<< "$json" | sed 's/.*"browser_download_url": "\(.*\)"/\1/')
         for url in $urls; do
             wget -P $download_path $url > /dev/null 2>&1
