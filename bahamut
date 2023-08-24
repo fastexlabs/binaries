@@ -5,7 +5,6 @@ action=""
 network=""
 version="v2.0.0"
 github_version_count=0
-systemctl=false
 script_name="bahamut"
 network_name="oasis sahara"
 projects="execution consensus validator"
@@ -29,7 +28,7 @@ process_info_execution=`ps -ef | grep "execution" | grep "$execution_pid" 2>&1`
 github_binaries="fastexlabs/binaries"
 genesis_url="https://github.com/${github_binaries}/raw/consensus-integration/genesis.ssz"
 oasis_config_url="https://raw.githubusercontent.com/${github_binaries}/consensus-integration/${oasis_config_name}"
-sahara_config_url="https://raw.githubusercontent.com/${github_binaries}/consensus-integration/${sahara_config_name}" 
+sahara_config_url="https://raw.githubusercontent.com/${github_binaries}/consensus-integration/${sahara_config_name}"
 bahamut_script_url="https://raw.githubusercontent.com/${github_binaries}/consensus-integration/${script_name}"
 fastex_staking_deposit_cli_url="git@gitlab.betconstruct.int:fastex-back-end/fastex-staking-deposit-cli.git"
 
@@ -124,27 +123,11 @@ function print_help
     echo -e "\t- ./bahamut status"
     #Systemctl commands:
     echo -e "\n"
-    print_systemctl_commands
-}
-
-function print_systemctl_commands
-{
-    systemctl_action="start stop restart status"
-    for f in $systemctl_action; do
-        echo "Systemctl ${f} commands:"
-        for i in $projects; do
-            for j in $network_name; do
-                echo -e "\tsudo systemctl ${f} bahamut_${j}_${i}.service"
-            done
-        done
-        echo -e "\n"
-    done
-    echo "Systemctl logs view commands"
-    for i in $projects; do
-        for j in $network_name; do
-            echo -e "\tjournalctl -u bahamut_${j}_${i}.service"
-        done
-    done
+    echo -e "Systemctl commands examples:"
+    echo -e "\tsudo systemctl start bahamut_oasis_execution.service - Start the Caravan node."
+    echo -e "\tsudo systemctl stop bahamut_sahara_consensus.service - Stop the Beacon-chain node."
+    echo -e "\tsudo systemctl restart bahamut_sahara_consensus.service - Restart the Beacon-chain node."
+    echo -e "\tsudo systemctl status bahamut_oasis_execution.service - Show the Beacon-chain node status."
 }
 
 function check_network()
@@ -390,14 +373,15 @@ function download_bahamut_script
 
 function download_configurations
 {
-    config=${1}_config_url
-    if [ "install" == "$action" ] && [ -f "${!config}" ]; then
+    config_file=${1}_config_file
+    config_url=${1}_config_url
+    if [ "install" == "$action" ] && [ -f "${!config_file}" ]; then
         info "The $1 config file is exist."
     else
-        echo -ne $(info "Starting the process of downloading ${config} file...")
-        wget -P $download_path ${!config} > /dev/null 2>&1
+        echo -ne $(info "Starting the process of downloading configs files...")
+        wget -P $download_path ${!config_url} > /dev/null 2>&1
         if ! [ 0 -eq $? ]; then
-            error "Failed to download ${1}_config.toml file."
+            error "Failed to download configs files."
             exit 1
         fi
         echo " Done"
@@ -407,7 +391,7 @@ function download_configurations
 function download_genesis
 {
     if [ -f $path/Bahamut/oasis/genesis.ssz ]; then
-        info "The genesis.ssz file exists."
+        info "The genesis.ssz file is exists."
     else
         echo -ne $(info "Starting the process of downloading genesis.ssz file...")
         cd $download_path
@@ -488,6 +472,42 @@ function install_python3_venv
     fi
 }
 
+function gererate_system_files
+{
+    start_sahara_execution="ExecStart=${path}/Bahamut/${2} --${1} --authrpc.jwtsecret=$path/Bahamut/${1}/datadirs/jwt.hex --config=$path/Bahamut/${1}/${1}_config.toml"
+    start_oasis_execution="ExecStart=${path}/Bahamut/${2} --${1} --authrpc.jwtsecret=$path/Bahamut/${1}/datadirs/jwt.hex --config=$path/Bahamut/${1}/${1}_config.toml"
+    start_sahara_consensus="ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex"
+    start_oasis_consensus="ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use --bootstrap-node="enr:-MK4QDW72KTjU2RcUd3SMUWz9vW9IHMCstEyiErHLnw5i-kIO0FHBYsSaV3xxYI8ynjGnRSutgfCqheaOVJ0dVlhFlKGAYoXK-y5h2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCPDPg2Jc2VjcDI1NmsxoQJINwhsm_QLHl4wLSJ2HptdrGc1DIFsNUrKxaFBADcZB4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QEAoUybSi3BMLP4Pig3-N02Um0ANaBOtFCGVWlvfeQb5GQrcIIFA9eQYUKtnkWHmDNf5Avqt0TNoTO-GHfZv4V-GAYoXN1lzh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYh7mJc2VjcDI1NmsxoQMv3ezcnOCiGBm0PSnt7sgPVNDVZ1NAC1igDKWRlcBBe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QPbEhAr_q9JW6U76VgZVdKyLhaVo82IDyuuTTQdHNzucPkdyWhVA15RSuH-SiPmUXjORtPS2f7msNbB-ynO_KzeGAYoXc4IFh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYycmJc2VjcDI1NmsxoQJ4dFs_DPW7THGr7KfmuvdNUXLoFjZ1YfaPFUl89H8b0YhzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex"
+    start_sahara_validator="ExecStart=${path}/Bahamut/${2} --accept-terms-of-use --wallet-dir=$path/Bahamut/${1}/wallet --${1} --wallet-password-file=$path/Bahamut/${1}/password.txt"
+    start_oasis_validator="ExecStart=${path}/Bahamut/${2} --accept-terms-of-use --wallet-dir=$path/Bahamut/${1}/wallet --${1} --wallet-password-file=$path/Bahamut/${1}/password.txt"
+    exec_start=start_${1}_${2}
+    user=$(whoami)
+    SERVICE_FILE_CONTENT="[Unit]
+Description=The ${2} layer node
+
+[Service]
+WorkingDirectory=${path}
+ExecStartPre=/bin/chmod +x ${path}/Bahamut/${2}
+${!exec_start}
+User=${user}
+Group=${user}
+Type=simple
+KillSignal=SIGINT
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target"
+    f=${1}_${2}_system_file
+    echo "$SERVICE_FILE_CONTENT" | sudo tee "${!f}" > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Failed to create the file."
+    fi
+    echo -ne $(info "Starting the gererate ${1} ${2} system file...")
+    echo " Done"
+}
+
 function install_function
 {
     check_install_dependency
@@ -503,9 +523,6 @@ function install_function
         openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/oasis/datadirs/jwt.hex
         openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/sahara/datadirs/jwt.hex
     fi
-    if [ "false" == "$systemctl" ]; then
-        c=$(read_confirmation "$(red "Would you like to run the script with systemctl")" "Y/N")
-    fi
     download_genesis
     move_genesis_file
     for i in $network_name; do
@@ -518,192 +535,26 @@ function install_function
     done
     rm -rf $download_path
     check_mainnet_network
-    install_python3
-    install_python3_pip
-    install_python3_venv
+    #install_python3
+    #install_python3_pip
+    #install_python3_venv
+    c=$(read_confirmation "$(red "Would you like to run the script with systemctl")" "Y/N")
     if [ "Y" == "$c" ]; then
         info "This script requires root privileges."
         for i in $projects; do
             for j in $network_name; do
                 service_file=${j}_${i}_system_file
+                service_file_name="bahamut_${j}_${i}.service"
                 if [ ! -f "${!service_file}" ]; then
-                    generate_${j}_${i}_system_file $password
-                    #sudo systemctl enable bahamut_${j}_${i}.service > /dev/null 2>&1
+                    gererate_system_files $j $i
+                    sudo systemctl enable $service_file_name > /dev/null 2>&1
                 else
-                    info "The ${j}_${i}_service_file is exist."
+                    info "The ${service_file_name} file is exist."
                 fi
             done
         done
-        print_systemctl_commands
+        info "Systemctl commands examples - sudo systmectl start/stop/restart/status bahamut_oasis_execution.service."
     fi
-}
-
-function generate_sahara_execution_system_file
-{
-    user=$(whoami)
-    SERVICE_FILE_CONTENT="[Unit]
-Description=The caravan layer node
-
-[Service]
-WorkingDirectory=${path}
-ExecStartPre=/bin/chmod +x ${path}/Bahamut/execution
-ExecStart=${path}/Bahamut/execution --sahara --authrpc.jwtsecret=$path/Bahamut/sahara/datadirs/jwt.hex --config=$path/Bahamut/sahara/sahara_config.toml
-User=${user}
-Group=${user}
-Type=simple
-KillSignal=SIGINT
-TimeoutStopSec=120
-Restart=on-failure
-RestartSec=10s
-
-[Install]
-WantedBy=multi-user.target"
-    echo "$SERVICE_FILE_CONTENT" | sudo tee "$sahara_execution_system_file" > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        echo "Failed to create the file."
-    fi
-    echo -ne $(info "Starting the gererate sahara execution system file...")
-    echo " Done"
-}
-
-function generate_sahara_consensus_system_file
-{
-    user=$(whoami)
-    SERVICE_FILE_CONTENT="[Unit]
-Description=The beacon-chain layer node
-
-[Service]
-WorkingDirectory=${path}
-ExecStartPre=chmod +x ${path}/Bahamut/consensus
-ExecStart=${path}/Bahamut/consensus --execution-endpoint="http://127.0.0.1:8551" --p2p-udp-port 12000 --p2p-tcp-port 13000 --grpc-gateway-port 3500 --rpc-port 4000 --accept-terms-of-use --sahara --datadir=$path/Bahamut/sahara/datadirs/consensus --jwt-secret=$path/Bahamut/sahara/datadirs/jwt.hex
-User=${user}
-Group=${user}
-Type=simple
-KillSignal=SIGINT
-TimeoutStopSec=120
-Restart=on-failure
-RestartSec=10s
-
-[Install]
-WantedBy=multi-user.target"
-    echo "$SERVICE_FILE_CONTENT" | sudo tee "$sahara_consensus_system_file" > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        echo "Failed to create the file."
-    fi
-    echo -ne $(info "Starting the gererate sahara consensus system file...")
-    echo " Done"
-}
-
-function generate_sahara_validator_system_file
-{
-    user=$(whoami)
-    SERVICE_FILE_CONTENT="[Unit]
-Description=The validator layer node
-
-[Service]
-WorkingDirectory=${path}
-ExecStartPre=chmod +x ${path}/Bahamut/validator
-ExecStart=${path}/Bahamut/validator --accept-terms-of-use --wallet-dir=$path/Bahamut/sahara/wallet --sahara --wallet-password-file=$path/Bahamut/sahara/password.txt
-User=${user}
-Group=${user}
-Type=simple
-KillSignal=SIGINT
-TimeoutStopSec=120
-Restart=on-failure
-RestartSec=10s
-
-[Install]
-WantedBy=multi-user.target"
-    echo "$SERVICE_FILE_CONTENT" | sudo tee "$sahara_validator_system_file" > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        echo "Failed to create the file."
-    fi
-    echo -ne $(info "Starting the gererate sahara validator system file...")
-    echo " Done"
-}
-
-function generate_oasis_execution_system_file
-{
-    user=$(whoami)
-    SERVICE_FILE_CONTENT="[Unit]
-Description=The caravan layer node
-
-[Service]
-WorkingDirectory=${path}
-ExecStartPre=/bin/chmod +x ${path}/Bahamut/execution
-ExecStart=${path}/Bahamut/execution --oasis --authrpc.jwtsecret=$path/Bahamut/oasis/datadirs/jwt.hex --config=$path/Bahamut/oasis/oasis_config.toml
-User=${user}
-Group=${user}
-Type=simple
-KillSignal=SIGINT
-TimeoutStopSec=120
-Restart=on-failure
-RestartSec=10s
-
-[Install]
-WantedBy=multi-user.target"
-    echo "$SERVICE_FILE_CONTENT" | sudo tee "$oasis_execution_system_file" > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        echo "Failed to create the file."
-    fi
-    echo -ne $(info "Starting the gererate oasis execution system file...")
-    echo " Done"
-}
-
-function generate_oasis_consensus_system_file
-{
-    user=$(whoami)
-    SERVICE_FILE_CONTENT="[Unit]
-Description=The beacon-chain layer node
-
-[Service]
-WorkingDirectory=${path}
-ExecStartPre=chmod +x ${path}/Bahamut/consensus
-ExecStart=${path}/Bahamut/consensus --execution-endpoint="http://127.0.0.1:8552" --p2p-static-id --p2p-udp-port 12001 --p2p-tcp-port 13001 --grpc-gateway-port 3501 --rpc-port 4001 --accept-terms-of-use --bootstrap-node="enr:-MK4QDW72KTjU2RcUd3SMUWz9vW9IHMCstEyiErHLnw5i-kIO0FHBYsSaV3xxYI8ynjGnRSutgfCqheaOVJ0dVlhFlKGAYoXK-y5h2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCPDPg2Jc2VjcDI1NmsxoQJINwhsm_QLHl4wLSJ2HptdrGc1DIFsNUrKxaFBADcZB4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QEAoUybSi3BMLP4Pig3-N02Um0ANaBOtFCGVWlvfeQb5GQrcIIFA9eQYUKtnkWHmDNf5Avqt0TNoTO-GHfZv4V-GAYoXN1lzh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYh7mJc2VjcDI1NmsxoQMv3ezcnOCiGBm0PSnt7sgPVNDVZ1NAC1igDKWRlcBBe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QPbEhAr_q9JW6U76VgZVdKyLhaVo82IDyuuTTQdHNzucPkdyWhVA15RSuH-SiPmUXjORtPS2f7msNbB-ynO_KzeGAYoXc4IFh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYycmJc2VjcDI1NmsxoQJ4dFs_DPW7THGr7KfmuvdNUXLoFjZ1YfaPFUl89H8b0YhzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --oasis --datadir=$path/Bahamut/oasis/datadirs/consensus --jwt-secret=$path/Bahamut/oasis/datadirs/jwt.hex --genesis-state=$path/Bahamut/oasis/genesis.ssz
-User=${user}
-Group=${user}
-Type=simple
-KillSignal=SIGINT
-TimeoutStopSec=120
-Restart=on-failure
-RestartSec=10s
-
-[Install]
-WantedBy=multi-user.target"
-    echo "$SERVICE_FILE_CONTENT" | sudo tee "$oasis_consensus_system_file" > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        echo "Failed to create the file."
-    fi
-    echo -ne $(info "Starting the gererate oasis consensus system file...")
-    echo " Done"
-}
-
-function generate_oasis_validator_system_file
-{
-    user=$(whoami)
-    SERVICE_FILE_CONTENT="[Unit]
-Description=The validator layer node
-
-[Service]
-WorkingDirectory=${path}
-ExecStartPre=chmod +x ${path}/Bahamut/validator
-ExecStart=${path}/Bahamut/validator --accept-terms-of-use --wallet-dir=$path/Bahamut/oasis/wallet --oasis --wallet-password-file=$path/Bahamut/oasis/password.txt
-User=${user}
-Group=${user}
-Type=simple
-KillSignal=SIGINT
-TimeoutStopSec=120
-Restart=on-failure
-RestartSec=10s
-
-[Install]
-WantedBy=multi-user.target"
-    echo "$SERVICE_FILE_CONTENT" | sudo tee "$oasis_validator_system_file" > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        echo "Failed to create the file."
-    fi
-    echo -ne $(info "Starting the gererate oasis validator system file...")
-    echo " Done"
 }
 
 function start_consensus
