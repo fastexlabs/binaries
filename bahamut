@@ -5,32 +5,19 @@ action=""
 network=""
 version="v2.0.0"
 github_version_count=0
+kill_attempt_count=15
 script_name="bahamut"
-network_name="oasis sahara"
-projects="execution consensus validator"
-oasis_config_name="oasis_config.toml"
-sahara_config_name="sahara_config.toml"
+network_name="sahara oasis"
+projects="execution consensus"
 download_path="$path/download"
-mainnet_directory="$path/Bahamut/mainnet"
-oasis_config_file="$path/Bahamut/oasis/${oasis_config_name}"
-sahara_config_file="$path/Bahamut/sahara/${sahara_config_name}"
-sahara_execution_system_file="/etc/systemd/system/bahamut_sahara_execution.service"
-sahara_consensus_system_file="/etc/systemd/system/bahamut_sahara_consensus.service"
-sahara_validator_system_file="/etc/systemd/system/bahamut_sahara_validator.service"
-oasis_execution_system_file="/etc/systemd/system/bahamut_oasis_execution.service"
-oasis_consensus_system_file="/etc/systemd/system/bahamut_oasis_consensus.service"
-oasis_validator_system_file="/etc/systemd/system/bahamut_oasis_validator.service"
-execution_pid=`pidof "execution" | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1`
-consensus_pid=`pidof "consensus" | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1`
-validator_pid=`pidof "validator" | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1`
-process_info_execution=`ps -ef | grep "execution" | grep "$execution_pid" 2>&1`
 
 github_binaries="fastexlabs/binaries"
+binaries_tags_url="https://api.github.com/repos/$github_binaries/tags"
+binaries_releases_url="https://api.github.com/repos/$github_binaries/releases/tags/${version}"
 genesis_url="https://github.com/${github_binaries}/raw/consensus-integration/genesis.ssz"
-oasis_config_url="https://raw.githubusercontent.com/${github_binaries}/consensus-integration/${oasis_config_name}"
-sahara_config_url="https://raw.githubusercontent.com/${github_binaries}/consensus-integration/${sahara_config_name}"
-bahamut_script_url="https://raw.githubusercontent.com/${github_binaries}/consensus-integration/${script_name}"
-fastex_staking_deposit_cli_url="git@gitlab.betconstruct.int:fastex-back-end/fastex-staking-deposit-cli.git"
+oasis_config_url="https://github.com/${github_binaries}/raw/consensus-integration/oasis_config.toml"
+sahara_config_url="https://github.com/${github_binaries}/raw/consensus-integration/sahara_config.toml"
+bahamut_script_url="https://github.com/${github_binaries}/raw/consensus-integration/${script_name}"
 
 declare -A ports
 ports=( [sahara.p2p-udp-port]=12000
@@ -44,7 +31,25 @@ ports=( [sahara.p2p-udp-port]=12000
         [oasis.rpc-port]=4001
         [oasis.authrpc]=8552 )
 
-bootstrap_node="--bootstrap-node="enr:-MK4QDW72KTjU2RcUd3SMUWz9vW9IHMCstEyiErHLnw5i-kIO0FHBYsSaV3xxYI8ynjGnRSutgfCqheaOVJ0dVlhFlKGAYoXK-y5h2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCPDPg2Jc2VjcDI1NmsxoQJINwhsm_QLHl4wLSJ2HptdrGc1DIFsNUrKxaFBADcZB4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QEAoUybSi3BMLP4Pig3-N02Um0ANaBOtFCGVWlvfeQb5GQrcIIFA9eQYUKtnkWHmDNf5Avqt0TNoTO-GHfZv4V-GAYoXN1lzh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYh7mJc2VjcDI1NmsxoQMv3ezcnOCiGBm0PSnt7sgPVNDVZ1NAC1igDKWRlcBBe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QPbEhAr_q9JW6U76VgZVdKyLhaVo82IDyuuTTQdHNzucPkdyWhVA15RSuH-SiPmUXjORtPS2f7msNbB-ynO_KzeGAYoXc4IFh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYycmJc2VjcDI1NmsxoQJ4dFs_DPW7THGr7KfmuvdNUXLoFjZ1YfaPFUl89H8b0YhzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A""
+declare -A project_pids
+for i in $projects; do
+    pid=$(pidof $i | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1)
+    pid_path=$(pidof $i | xargs pwdx 2>&1 | grep "$path" | cut -d: -f2 | sed 's/^ *//')
+    for j in $pid_path; do
+        if [ "$path" == "$j" ]; then
+            for c in $pid; do
+                for f in $network_name; do
+                    if ps -fp "$c" | grep "$f" > /dev/null 2>&1; then
+                        project_pids["${f}_${i}_pid"]="$c"
+                    fi
+                done
+            done
+        fi
+    done
+done
+
+
+oasis_bootstrap_node="--bootstrap-node="enr:-MK4QDW72KTjU2RcUd3SMUWz9vW9IHMCstEyiErHLnw5i-kIO0FHBYsSaV3xxYI8ynjGnRSutgfCqheaOVJ0dVlhFlKGAYoXK-y5h2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCPDPg2Jc2VjcDI1NmsxoQJINwhsm_QLHl4wLSJ2HptdrGc1DIFsNUrKxaFBADcZB4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QEAoUybSi3BMLP4Pig3-N02Um0ANaBOtFCGVWlvfeQb5GQrcIIFA9eQYUKtnkWHmDNf5Avqt0TNoTO-GHfZv4V-GAYoXN1lzh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYh7mJc2VjcDI1NmsxoQMv3ezcnOCiGBm0PSnt7sgPVNDVZ1NAC1igDKWRlcBBe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QPbEhAr_q9JW6U76VgZVdKyLhaVo82IDyuuTTQdHNzucPkdyWhVA15RSuH-SiPmUXjORtPS2f7msNbB-ynO_KzeGAYoXc4IFh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYycmJc2VjcDI1NmsxoQJ4dFs_DPW7THGr7KfmuvdNUXLoFjZ1YfaPFUl89H8b0YhzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A""
 
 function red()
 {
@@ -95,20 +100,12 @@ function print_help
     #Mandatory options:
     echo -e "\n"
     echo "Mandatory OPTIONS:"
-    echo -e "\tinstall|start|stop|restart|status|update|validator_start|validator_stop|validator_restart|validator_status|addValidator|importValidator|removeValidator|exitValidator - Main action(s) to be performed."
+    echo -e "\tinstall|start|stop|restart|status|update - Main action(s) to be performed."
     echo -e "\tstart - Starts the Caravan and Beacon-chain nodes"
     echo -e "\tstop - Stops the Caravan and Beacon-chain nodes."
     echo -e "\tstatus - Returns the current status of Caravan and beacon-chain."
     echo -e "\tinstall - Installs Caravan and Beacon-chain dependencies needed for the start."
-    echo -e "\tupdate - Updates Caravan, Beacon-chain and validator binaries and native scripts."
-    echo -e "\tvalidator_start - ..."
-    echo -e "\tvalidator_stop - ..."
-    echo -e "\tvalidator_testart - ..."
-    echo -e "\tvalidator_status - ..."
-    echo -e "\taddValidator - ..."
-    echo -e "\timportValidator - ..."
-    echo -e "\tremoveValidator - ..."
-    echo -e "\texitValidator - ..."
+    echo -e "\tupdate - Updates Caravan and Beacon-chain binaries and native scripts."
     echo -e "\t-n, --network - Necessary to connect to the network. Network can be Sahara (mainnet) or Oasis (testnet)."
     #Arguments:
     echo -e "\n"
@@ -118,6 +115,7 @@ function print_help
     #Examples:
     echo -e "\n"
     echo -e "Examples:"
+    echo -e "\t- ./bahamut install"
     echo -e "\t- ./bahamut start -n=oasis"
     echo -e "\t- ./bahamut update --version v1.0.0"
     echo -e "\t- ./bahamut stop"
@@ -134,8 +132,20 @@ function print_help
 
 function check_network()
 {
+    if [ -z "$network" ]; then
+        error "Network is mandatory option during start. Type --help or -h to see the correct options."
+        exit 1
+    fi
     if [  "mainnet" != "$network" ] && [ "oasis" != "$network" ] && [ "sahara" != "$network" ]; then
         error "Network name must be \"mainnet\",\"oasis\",\"sahara\"."
+        exit 1
+    fi
+}
+
+function check_action
+{
+    if ! [ -z "$action" ]; then
+        error "Please specify only one of start|stop|status|restart|install|update options!!!"
         exit 1
     fi
 }
@@ -174,12 +184,8 @@ while [[ $# -gt 0 ]]; do
             shift $(get_shift $1)
             ((github_version_count=github_version_count + 1))
             ;;
-        start|stop|status|restart|install|update|validator_start|validator_stop|validator_restart|validator_status|addValidator|\
-        importValidator|removeValidator|exitValidator)
-            if ! [ -z "$action" ]; then
-                error "Please specify only one of start|stop|status|restart|install|update|validator_start|validator_stop|validator_restart|validator_status|addValidator|importValidator|removeValidator|exitValidator options!!!"
-                exit 1
-            fi
+        start|stop|status|restart|install|update)
+            check_action
             action=$1
             shift
             ;;
@@ -191,12 +197,23 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$action" ]; then
-    error "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\", \"update\", \"validator_start\", \"validator_stop\",
-                       \"validator_restart\", \"validator_status\", \"addValidator\", \"importValidator\", \"removeValidator\",
-                       \"exitValidator\" is missing!!!"
+    error "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\", \"update\" is missing!!!"
     info "For more details please use -h|--help option."
     exit 1
 fi
+
+##############################################
+#This is done for users who ran the script on the mainnet
+if [ -z "${project_pids["oasis_execution_pid"]}" ] && [ -z "${project_pids["sahara_execution_pid"]}" ] && [ -d "$path/Bahamut/mainnet" ]; then
+    rm -rf $path/Bahamut/sahara
+    mv $path/Bahamut/mainnet $path/Bahamut/sahara
+fi
+
+if [ "mainnet" == "$network" ]; then
+    network="sahara"
+fi
+##############################################
+
 
 function read_confirmation()
 {
@@ -222,66 +239,81 @@ function check_install_dependency
         error "The openssl is not found"
         exit 1     
     fi
-    if ! which wget >/dev/null 2>&1; then
+    if ! which wget > /dev/null 2>&1; then
         error "The wget could not be found. You need to install wget to run the script."
         exit 1
     fi
-    if ! which curl >/dev/null 2>&1; then
+    if ! which tr > /dev/null 2>&1; then
+        error "The tr could not be found. You need to install tr to run the script."
+        exit 1
+    fi
+    if ! which curl > /dev/null 2>&1; then
         error "The curl could not be found. You need to install curl to run the script."
         exit 1
     fi
 }
 
-function check_validator_dependency
-{
-    if [ ! -f $path/Bahamut/validator ]; then
-        error "The validator binary is not found. Please do the following first ./bahamut install"
-        exit 1
-    fi
-    if ! which python3 > /dev/null 2>&1; then
-        error "The python3 is not found. Please do the following first ./bahamut install"
-        exit 1
-    fi
-    if ! which pip > /dev/null 2>&1; then
-        error "The pip is not found. Please do the following first ./bahamut install"
-        exit 1
-    fi
-    dpkg -s python3-venv > /dev/null 2>&1
-    if ! [ 0 -eq $? ]; then
-        error "The python3-venv is not found. Please do the following first ./bahamut install"
-        exit 1
-    fi
-}
-
-function check_mainnet_network
-{
-    if [ -z "$execution_pid" ] && [ -d "$mainnet_directory" ]; then
-        rm -rf $path/Bahamut/sahara
-        mv $path/Bahamut/mainnet $path/Bahamut/sahara
-    fi
-    if [ "mainnet" == "$network" ]; then
-        network="sahara"
-    fi
-}
-
 function check_start_dependency
 {
+    for i in $projects; do
+        if [ ! -f "$path/Bahamut/${i}" ]; then
+            error "The ${i} file not found. Please do the following first ./bahamut install"
+            exit 1
+        fi
+        if [ ! -x "$path/Bahamut/${i}" ]; then
+            error "The ${i} is not executable. Please do the following first ./bahamut install"
+            exit 1
+        fi
+    done
+    if [ ! -f "$path/Bahamut/oasis/genesis.ssz" ]; then
+        error "The genesis.ssz not found. Please do the following first ./bahamut install"
+        exit 1
+    fi
+}
+
+function check_stop_dependency_and_init
+{
     if [ -z "$network" ]; then
-        error "Network is mandatory option during start. Type --help or -h to see the correct options."
-        exit 1
+        local c=0
+        local n=""
+        local p=$(pidof $projects)
+        if [ ! -z "$p" ]; then
+            for i in $network_name; do
+                local o=$(ps -fp $p)
+                if echo "$o" | grep -q $i; then
+                    ((c=c+1))
+                    n=$i
+                fi
+            done
+        fi
+        if [ 0 -eq $c ]; then
+            info "There is no running process."
+            exit 0
+        elif [ $c -eq 1 ]; then
+            network=$n
+        else
+            error "Sahara and Oasis are currently working. To restart, please indicate which network you want to ${action} example (./bahamut ${action} -n=oasis)."
+            exit 1
+        fi
     fi
-    #if [ ! -f "$path/Bahamut/${1}" ]; then
-    #    error "The ${1} files not found. Please do the following first ./bahamut install"
-    #    exit 1
-    #fi
-    #if [ ! -x "$path/Bahamut/${1}" ]; then
-    #    error "The ${1} are not executable. Please do the following first ./bahamut install"
-    #    exit 1
-    #fi
-    if [ ! -f "$oasis_config_file" ] && [ ! -f "$sahara_config_file" ]; then
-        error "The files oasis_config.toml and sahara_config.toml do not exist. Please do the following first ./bahamut install"
-        exit 1
+}
+
+function check_status_dependency
+{
+    if [ "${#project_pids[@]}" -eq 0 ]; then
+        info "There is no running process."
+        exit 0
     fi
+}
+
+function check_config
+{
+    for i in $network_name; do
+        if [ ! -f $(get_config_file $i) ]; then
+            info "The file $(get_config_name $i) do not exist. Please do the following first ./bahamut install"
+            exit 0
+        fi
+    done
 }
 
 function check_update_dependency
@@ -290,61 +322,60 @@ function check_update_dependency
         error "Please do the following first ./bahamut install"
         exit 1
     fi
-    if [ ! -z "$execution_pid" ]; then
-        error "To update, it is necessary to stop the running processes. ./bahamut stop"
-        exit 1
-    fi
-}
-
-function remove_spaces
-{
-    echo "(^|[[:space:]])"${1}"($|[[:space:]])"
+    for i in $network_name; do
+        for j in $projects; do
+            if [ ! -z "${project_pids["${i}_${j}_pid"]}" ]; then
+                error "To update, it is necessary to stop the running processes. ./bahamut stop"
+                exit 1
+            fi
+        done
+    done
 }
 
 function check_versions_flag
 {
     if [ $github_version_count -ge 2 ]; then
-        error "The version flag cannot be specified twice"
+        error "The version flag cannot be specified more than once."
         exit 1
     fi
     if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         error "Invalid github version number format. Please use the format (example v1.0.0)."
         exit 1
     else
-        tags=$(curl -s https://api.github.com/repos/$github_binaries/tags | grep -oP '"name": "\K[^"]+')
-        if ! [[ $tags =~ $(remove_spaces $version) ]]; then
+        local t=$(curl -s "$binaries_tags_url" | grep -oP '"name": "\K[^"]+')
+        if ! [[ $t =~ (^|[[:space:]])"$version"($|[[:space:]]) ]]; then
             error "The entered version was not found on github."
             exit 1
         fi
     fi
 }
 
-function read_confirmation_for_stop
+function read_confirmation_and_stop
 {
-    if [ $2 ]; then
-        c=$(read_confirmation "$(red "Do you want to ${action} running ${1}?")" "Y/N")
-        if [ "Y" == "$c" ]; then
-            kill_process $1 $2
+    local c=$(read_confirmation "$(red "Do you want to ${action} running ${1} ${2} process?")" "Y/N")
+    if [ "Y" == "$c" ]; then
+        kill_process $1 $2 $3 "-15"
+        `ps -p $3` > /dev/null 2>&1
+        if [ 0 -eq $? ]; then
+            kill_process $1 $2 $3 "-9"
         fi
-    else
-        info "There is no ${1} running process."
     fi
 }
 
 function download_binaries_and_extract
 {
-    if [ "install" == "$action" ] && [ -f "$path/Bahamut/$1" ]; then
+    if [ "install" == "$action" ] && [ -x "$path/Bahamut/$1" ]; then
         info "The $1 binary is exist."
     else
         echo -ne $(info "Starting the process of downloading ${1} binaries file...")
-        json=$(curl -s -i -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$github_binaries/releases/tags/${version}")
-        urls=$(grep browser_download_url <<< "$json" | sed 's/.*"browser_download_url": "\(.*\)"/\1/')
-        for url in $urls; do
-            wget -P $download_path $url > /dev/null 2>&1
+        local j=$(curl -s -i -H "Accept: application/vnd.github.v3+json" "$binaries_releases_url")
+        local u=$(grep browser_download_url <<< "$j" | sed 's/.*"browser_download_url": "\(.*\)"/\1/')
+        for url in $u; do
+            wget -P $download_path/ $u > /dev/null 2>&1
             if ! [ 0 -eq $? ]; then
-            error "Failed to download the binaries."
-            exit 1
-        fi
+                error "Failed to download the binaries."
+                exit 1
+            fi
         done
         echo " Done"
         echo -ne $(info "Starting the process of extract ${1} binaries file...")
@@ -356,6 +387,7 @@ function download_binaries_and_extract
                 exit 1
             fi
         done
+        mv $download_path/$1 $path/Bahamut/ > /dev/null 2>&1
         echo " Done"
         cd - > /dev/null
     fi
@@ -363,29 +395,43 @@ function download_binaries_and_extract
 
 function download_bahamut_script
 {
-    echo -ne $(info "Starting the process of downloading bahamut script...")
-    wget -P $download_path $bahamut_script_url > /dev/null 2>&1
+    echo -ne $(info "Starting the process of downloading ${script_name} script...")
+    wget -P $download_path/ $bahamut_script_url > /dev/null 2>&1
     if ! [ 0 -eq $? ]; then
-        error "Failed to download the bahamut script."
+        error "Failed to download the ${script_name} script."
         exit 1
     fi
     chmod +x $download_path/$script_name
+    mv $download_path/$script_name $path > /dev/null 2>&1
     echo " Done"
+}
+
+function get_config_name
+{
+    echo "${1}_config.toml"
+}
+
+function get_config_file
+{
+    local n=$(get_config_name ${1})
+    echo "$path/Bahamut/${1}/${n}"
 }
 
 function download_configurations
 {
-    config_file=${1}_config_file
-    config_url=${1}_config_url
-    if [ "install" == "$action" ] && [ -f "${!config_file}" ]; then
+    local cf=$(get_config_file ${1})
+    local cu=${1}_config_url
+    if [ "install" == "$action" ] && [ -f "${cf}" ]; then
         info "The $1 config file is exist."
     else
-        echo -ne $(info "Starting the process of downloading configs files...")
-        wget -P $download_path ${!config_url} > /dev/null 2>&1
+        echo -ne $(info "Starting the process of downloading $(get_config_name ${1}) file...")
+        wget -P $download_path/ ${!cu} > /dev/null 2>&1
         if ! [ 0 -eq $? ]; then
             error "Failed to download configs files."
             exit 1
         fi
+        local n=$(get_config_name ${1})
+        mv "$download_path/${n}" $path/Bahamut/${1}/ > /dev/null 2>&1
         echo " Done"
     fi
 }
@@ -396,103 +442,49 @@ function download_genesis
         info "The genesis.ssz file is exists."
     else
         echo -ne $(info "Starting the process of downloading genesis.ssz file...")
-        cd $download_path
-        wget $genesis_url -O genesis.ssz > /dev/null 2>&1
+        wget -P $download_path/ $genesis_url > /dev/null 2>&1
         if ! [ 0 -eq $? ]; then
             error "Failed to download genesis.ssz file."
             exit 1
         fi
+        mv "$download_path/genesis.ssz" $path/Bahamut/oasis/ > /dev/null 2>&1
         echo " Done"
-        cd - > /dev/null
     fi
 }
 
-function move_binaries
+function get_systemctl_files_path
 {
-    if [ -f "$download_path/$1" ]; then
-        rm -rf $path/Bahamut/$1
-        mv $download_path/$1 $path/Bahamut/
-    fi
+    echo "/etc/systemd/system/bahamut_${1}_${2}.service"
 }
 
-function move_config_files
+function get_systemctl_execution_start
 {
-    config_name=${1}_config_name
-    if [ -f "$download_path/${!config_name}" ]; then
-        mv "$download_path/${!config_name}" $path/Bahamut/${1}
-    fi
+    echo "ExecStart=${path}/Bahamut/${2} --${1} --authrpc.jwtsecret=$path/Bahamut/${1}/datadirs/jwt.hex --config=$path/Bahamut/${1}/$(get_config_name ${1})"
 }
 
-function move_genesis_file
+function get_systemctl_consensus_start
 {
-    if [ -f "$download_path/genesis.ssz" ]; then
-        mv "$download_path/genesis.ssz" $path/Bahamut/oasis
+    local o=""
+    if [ "oasis" == "$network" ]; then
+        o="--genesis-state $path/Bahamut/oasis/genesis.ssz ${oasis_bootstrap_node}"
     fi
+    echo "ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use --p2p-static-id --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex ${o}"
 }
 
-function update_action_files_transfer
+function generate_systemctl_files
 {
-    if [ -f "$download_path/$script_name" ]; then
-        mv $download_path/$script_name $path
-    fi
-}
-
-function install_python3
-{
-    if ! which python3 > /dev/null 2>&1; then
-        info "Starting the python3 install process. Please wait."
-        sudo apt install software-properties-common > /dev/null 2>&1
-	    sudo add-apt-repository ppa:deadsnakes/ppa > /dev/null 2>&1
-	    sudo apt update > /dev/null 2>&1
-	    sudo apt install python3.10 > /dev/null 2>&1
-	    sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 2 > /dev/null 2>&1
-	    sudo update-alternatives --config python3 > /dev/null 2>&1
-    else
-        info "The python3 is exist."
-    fi
-}
-
-function install_python3_pip
-{
-    if ! which pip > /dev/null 2>&1; then
-        info "Starting the python3-pip install process. Please wait."
-        sudo apt update > /dev/null 2>&1 && sudo apt upgrade -y > /dev/null 2>&1
-        sudo apt install python3-pip -y > /dev/null 2>&1
-    else
-        info "The pip is exist."
-    fi
-}
-
-function install_python3_venv
-{
-    dpkg -s python3-venv > /dev/null 2>&1
-    if ! [ 0 -eq $? ]; then
-        info "Starting the python3-venv install process. Please wait."
-        sudo apt install python3-venv -y > /dev/null 2>&1
-    else
-        info "The python3-venv is exist."
-    fi
-}
-
-function gererate_system_files
-{
-    start_sahara_execution="ExecStart=${path}/Bahamut/${2} --${1} --authrpc.jwtsecret=$path/Bahamut/${1}/datadirs/jwt.hex --config=$path/Bahamut/${1}/${1}_config.toml"
-    start_oasis_execution="ExecStart=${path}/Bahamut/${2} --${1} --authrpc.jwtsecret=$path/Bahamut/${1}/datadirs/jwt.hex --config=$path/Bahamut/${1}/${1}_config.toml"
-    start_sahara_consensus="ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex"
-    start_oasis_consensus="ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use ${bootstrap_node} --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex --genesis-state $path/Bahamut/${1}/genesis.ssz"
-    start_sahara_validator="ExecStart=${path}/Bahamut/${2} --accept-terms-of-use --wallet-dir=$path/Bahamut/${1}/wallet --${1} --wallet-password-file=$path/Bahamut/${1}/password.txt"
-    start_oasis_validator="ExecStart=${path}/Bahamut/${2} --accept-terms-of-use --wallet-dir=$path/Bahamut/${1}/wallet --${1} --wallet-password-file=$path/Bahamut/${1}/password.txt"
-    exec_start=start_${1}_${2}
-    user=$(whoami)
-    SERVICE_FILE_CONTENT="[Unit]
+    local u=$(whoami)
+    local exec_start=$(get_systemctl_${2}_start ${1} ${2})
+    local systemctl_file=$(get_systemctl_files_path ${1} ${2})
+    local service_file_content="[Unit]
 Description=The ${2} layer node
 
 [Service]
 WorkingDirectory=${path}
 ExecStartPre=/bin/chmod +x ${path}/Bahamut/${2}
-${!exec_start}
-User=${user}
-Group=${user}
+${exec_start}
+User=${u}
+Group=${u}
 Type=simple
 KillSignal=SIGINT
 TimeoutStopSec=120
@@ -501,45 +493,43 @@ RestartSec=10s
 
 [Install]
 WantedBy=multi-user.target"
-    f=${1}_${2}_system_file
-    echo "$SERVICE_FILE_CONTENT" | sudo tee "${!f}" > /dev/null 2>&1
+    echo "$service_file_content" | sudo tee "${systemctl_file}" > /dev/null 2>&1
     if [ $? -ne 0 ]; then
         echo "Failed to create the file."
     fi
-    echo -ne $(info "Starting the gererate ${1} ${2} system file...")
+    echo -ne $(info "Starting the generate ${1} ${2} system file...")
     echo " Done"
 }
 
-function install_function
+function init_directory
 {
-    check_install_dependency
-    check_versions_flag
-    rm -rf $download_path
-    mkdir -p $path/Bahamut/oasis/datadirs/execution $path/Bahamut/oasis/datadirs/consensus
-    mkdir -p $path/Bahamut/sahara/datadirs/execution $path/Bahamut/sahara/datadirs/consensus
-    mkdir -p $path/Bahamut/oasis/log/execution $path/Bahamut/oasis/log/consensus $path/Bahamut/oasis/log/validator
-    mkdir -p $path/Bahamut/sahara/log/execution $path/Bahamut/sahara/log/consensus $path/Bahamut/sahara/log/validator
-    mkdir -p $path/Bahamut/sahara/wallet $path/Bahamut/oasis/wallet
-    mkdir -p $path/download
+    local f=false
     if [ ! -f "$path/Bahamut/oasis/datadirs/jwt.hex" ] || [ ! -f "$path/Bahamut/sahara/datadirs/jwt.hex" ]; then
+        f=true
+    fi
+    for i in $network_name; do
+        for j in $projects; do
+            if [ "true" == "$f" ]; then
+                rm -rf $path/Bahamut/${i}/datadirs/*
+            fi
+            mkdir -p $path/Bahamut/${i}/datadirs/${j}
+            mkdir -p $path/Bahamut/${i}/log/${j}
+        done
+    done
+    if [ "true" == "$f" ]; then
+        echo -ne $(info "Starting the create jwt.hex files..")
         openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/oasis/datadirs/jwt.hex
         openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/sahara/datadirs/jwt.hex
+        echo " Done"
+    else
+        info "The jwt.hex files exist."
     fi
-    download_genesis
-    move_genesis_file
-    for i in $network_name; do
-        download_configurations $i
-        move_config_files $i
-    done
-    for i in $projects; do
-        download_binaries_and_extract $i
-        move_binaries $i
-    done
     rm -rf $download_path
-    check_mainnet_network
-    #install_python3
-    #install_python3_pip
-    #install_python3_venv
+    mkdir -p $download_path
+}
+
+function init_systemctl
+{
     c=$(read_confirmation "$(red "Would you like to run the script with systemctl")" "Y/N")
     if [ "Y" == "$c" ]; then
         info "This script requires root privileges."
@@ -548,27 +538,45 @@ function install_function
                 service_file=${j}_${i}_system_file
                 service_file_name="bahamut_${j}_${i}.service"
                 if [ ! -f "${!service_file}" ]; then
-                    gererate_system_files $j $i
+                    generate_systemctl_files $j $i
                     sudo systemctl enable $service_file_name > /dev/null 2>&1
                 else
                     info "The ${service_file_name} file is exist."
                 fi
             done
         done
+        info "The systemctl files are enables."
         info "Systemctl commands examples - sudo systemctl start/stop/restart/status bahamut_oasis_execution.service."
+    else
+        info "Deny operation with systemctel."
     fi
+}
+
+function install_function
+{
+    check_install_dependency
+    check_versions_flag
+    init_directory
+    download_genesis
+    for i in $network_name; do
+        download_configurations $i
+    done
+    for i in $projects; do
+        download_binaries_and_extract $i
+    done
+    rm -rf $download_path
+    init_systemctl
 }
 
 function start_consensus
 {
-    genesis=""
+    local o=""
     if [ "oasis" == "$network" ]; then
-        genesis="--genesis-state $path/Bahamut/oasis/genesis.ssz"
+        o="--genesis-state $path/Bahamut/oasis/genesis.ssz ${oasis_bootstrap_node}"
     fi
-    check_mainnet_network
-    echo -ne $(info "Starting the new ${1} process...")
-    beacon_chain_log_file="$path/Bahamut/${network}/log/consensus/${1}_`date +\"%Y_%m_%d_%T\"`"
-    nohup $path/Bahamut/$1 $genesis $bootstrap_node \
+    echo -ne $(info "Starting the new ${network} ${1} process...")
+    local beacon_chain_log_file="$path/Bahamut/${network}/log/consensus/${1}_`date +\"%Y_%m_%d_%T\"`"
+    nohup $path/Bahamut/$1 ${o} \
         --execution-endpoint="http://127.0.0.1:${ports[${network}.authrpc]}" \
         --p2p-udp-port ${ports[${network}.p2p-udp-port]} \
         --p2p-tcp-port ${ports[${network}.p2p-tcp-port]} \
@@ -576,6 +584,7 @@ function start_consensus
         --rpc-port ${ports[${network}.rpc-port]} \
         --accept-terms-of-use \
         --p2p-static-id \
+        --min-sync-peers 1 \
         --${network} \
         --datadir=$path/Bahamut/$network/datadirs/consensus \
         --jwt-secret=$path/Bahamut/${network}/datadirs/jwt.hex > $beacon_chain_log_file 2>&1 &
@@ -584,154 +593,42 @@ function start_consensus
 
 function start_execution
 {
-    check_mainnet_network
-    echo -ne $(info "Starting the new ${1} process...")
-    execution_log_file="$path/Bahamut/${network}/log/${1}/${1}_`date +\"%Y_%m_%d_%T\"`"
-    config=${network}_config_file
+    echo -ne $(info "Starting the new ${network} ${1} process...")
+    local execution_log_file="$path/Bahamut/${network}/log/${1}/${1}_`date +\"%Y_%m_%d_%T\"`"
+    local config=$(get_config_file $network)
     nohup $path/Bahamut/$1 \
         --$network \
         --authrpc.jwtsecret=$path/Bahamut/${network}/datadirs/jwt.hex \
-        --config ${!config} > $execution_log_file 2>&1 &
+        --config ${config} > $execution_log_file 2>&1 &
     echo " Done"
 }
 
 function start_function
 {
+    check_network
+    check_config
+    check_start_dependency
     for i in $projects; do
-        check_start_dependency $i
-        p=${i}_pid
-        if [ ${!p} ]; then
-            error "The process ${i} is already started with pid=${!p}"
-            exit 1
+        if [ "${project_pids[${network}_${i}_pid]}" ]; then
+            error "The process $network ${i} is already started with pid="${project_pids[${network}_${i}_pid]}""
+            continue
+        else
+            start_${i} ${i}
         fi
     done
-    projects_array=($projects)
-    start_execution "${projects_array[0]}"
-    start_consensus "${projects_array[1]}"
-}
-
-function validator_start_function
-{
-    #check_validator_dependency
-	init_network
-    projects_array=($projects)
-    echo -ne $(info "Starting the new "${projects_array[2]}" process...")
-    validator_log_file="$path/Bahamut/oasis/log/"${projects_array[2]}"/"${projects_array[2]}"_`date +\"%Y_%m_%d_%T\"`" #TODO change oasis in ${network}
-    nohup $path/Bahamut/"${projects_array[2]}" \
-        --accept-terms-of-use \
-        --wallet-dir=$path/Bahamut/oasis/wallet \
-        --goerli \
-        --wallet-password-file=$path/Bahamut/oasis/password.txt > $validator_log_file 2>&1 &
-    echo " Done"
-}
-
-function validator_stop_function
-{
-    projects_array=($projects)
-    read_confirmation_for_stop "${projects_array[2]}"  $validator_pid
-    validator_pid=""
-}
-
-function validator_restart_function
-{
-    init_network
-    validator_stop_function
-    validator_start_function
-}
-
-function validator_status_function
-{
-    echo "validator_status_function"
-}
-
-function addValidator_function
-{
-    #check_validator_dependency
-    info "Starting the add validator process."
-    if [ ! -d "$path/Bahamut/fastex_staking_deposit_cli" ]; then
-        git clone ${fastex_staking_deposit_cli_url} $path/Bahamut/fastex_staking_deposit_cli > /dev/null 2>&1
-        if ! [ 0 -eq $? ]; then
-            error "Failed fastex-staking-deposit-cli cloning process."
-            exit 1
-        fi
-    fi
-    cd $path/Bahamut/fastex_staking_deposit_cli
-    if [ ! -d "$path/Bahamut/fastex_staking_deposit_cli/venv" ]; then
-        python3 -m venv venv > /dev/null 2>&1
-        if ! [ 0 -eq $? ]; then
-            error "Failed for creating a virtual environment process."
-            exit 1
-        fi
-    fi
-    source $path/Bahamut/fastex_staking_deposit_cli/venv/bin/activate > /dev/null 2>&1
-    if ! [ 0 -eq $? ]; then
-        error "Failed the generated files configure the virtual environment process."
-        exit 1
-    fi
-    pip install -r requirements.txt > /dev/null 2>&1
-    python setup.py install > /dev/null 2>&1
-    python staking_deposit/deposit.py new-mnemonic --folder=$path/Bahamut --deployment_data=$path/input.json
-    deactivate
-}
-
-function importValidator_function
-{
-    #check_validator_dependency
-	init_network
-    info "Starting the import "${projects_array[2]}" process."
-    mkdir -p $path/Bahamut/oasis/wallet #TODO change oasis in $network
-    projects_array=($projects)
-    $path/Bahamut/"${projects_array[2]}" \
-        --accept-terms-of-use \
-        accounts \
-        import \
-        --goerli \
-        --wallet-dir=$path/Bahamut/oasis/wallet \
-        --keys-dir=$path/Bahamut/validator_keys \
-        --account-password-file=$path/Bahamut/oasis/password.txt #TODO change oasis in $network
-}
-
-function removeValidator_function
-{
-    #check_validator_dependency
-	init_network
-    info "Starting the validator delete process."
-    projects_array=($projects)
-    $path/Bahamut/"${projects_array[2]}" \
-        --accept-terms-of-use \
-        accounts \
-        delete \
-        --goerli \
-        --wallet-dir=$path/Bahamut/oasis/wallet \
-        --account-password-file=$path/Bahamut/oasis/password.txt
-}
-
-function exitValidator_function
-{
-    #check_validator_dependency
-	init_network
-    info "Starting the validator exit process."
-    projects_array=($projects)
-    $path/Bahamut/"${projects_array[2]}" \
-        --accept-terms-of-use \
-        accounts \
-        voluntary-exit \
-        --goerli \
-        --wallet-dir=$path/Bahamut/oasis/wallet \
-        --account-password-file=$path/Bahamut/oasis/password.txt
 }
 
 function kill_process
 {
-    if [ "$2" ]; then
-        count=0
-        echo -ne $(info "Stopping the ${1} process with pid=${2}...")
-        kill -15 $2
-        while ps -p $2 > /dev/null; do 
+    if [ "$3" ]; then
+        local count=0
+        echo -ne $(info "Stopping the ${1} ${2} process with pid=${3}...")
+        kill $4 $3
+        while ps -p $3 > /dev/null; do
             sleep 2
             ((count=count + 1))
-            if [[ count -ge 15 ]]; then
-                error "The ${1} process does not shut down."
+            if [[ $count -ge $kill_attempt_count ]]; then
+                echo -ne $(info "The ${1} ${2} process does not shut down. Please wait...")
                 break
             fi
         done
@@ -741,32 +638,28 @@ function kill_process
 
 function stop_function
 {
+    check_stop_dependency_and_init
     for i in $projects; do
-        p=${i}_pid
-        read_confirmation_for_stop $i ${!p}
+        if [ "${project_pids[${network}_${i}_pid]}" ]; then
+            read_confirmation_and_stop $network $i "${project_pids[${network}_${i}_pid]}"
+        else
+            info "There is no ${network} ${i} running process."
+        fi
     done
-    eval ${p}=""
-}
-
-function init_network
-{
-    if [[ ${process_info_execution} == *"--oasis"* ]]; then
-        network="oasis"
-    else
-        network="sahara"
-    fi
 }
 
 function init_http_port
 {
-    http_port=$(grep "HTTPPort" "${1}" | awk -F "=" '{print $2}' | tr -d '[:space:]')
+    local http_port=$(grep "HTTPPort" "${1}" | awk -F "=" '{print $2}' | tr -d '[:space:]')
     echo "$http_port"
 }
 
 function restart_function
 {
-    init_network
     stop_function
+    for key in "${!project_pids[@]}"; do
+        unset project_pids["$key"]
+    done
     start_function
 }
 
@@ -778,71 +671,75 @@ function update_function
     mkdir -p $path/download
     for i in $projects; do
         download_binaries_and_extract $i
-        move_binaries $i
     done
     download_bahamut_script
-    update_action_files_transfer
     rm -rf $download_path
 }
 
 function execution_syncing_status
 {
-    init_network
-    f=${network}_config_file
-    http_port=$(init_http_port ${!f})
-    if [ "$execution_pid" ]; then
-        info "The ${1} running: pid=${execution_pid}."
-        execution_json=$(curl -s \
+    if [ ${project_pids["${1}_${2}_pid"]} ]; then
+        check_config
+        local f=$(get_config_file $1)
+        local http_port=$(init_http_port ${f})
+        echo -ne $(info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}",")
+        local execution_json=$(curl -s \
         -H "Content-Type: application/json" \
         -X POST \
         --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
         127.0.0.1:${http_port})
-        if echo "$execution_json" | grep -q '"result":false'; then
-            info "The ${1} synced."
-        elif [ -z "$execution_json" ]; then
-            info "Waiting to connect with peers"
+        if [ 0 -eq $? ]; then
+            if echo "$execution_json" | grep -q '"result":false'; then
+                echo " and full synced."
+            else
+                local highestBlock=$(echo "$execution_json" | grep -o '"highestBlock":"[^"]*"' | cut -d '"' -f 4)
+                local currentBlock=$(echo "$execution_json" | grep -o '"currentBlock":"[^"]*"' | cut -d '"' -f 4)
+                local decimal_highestBlock=$(printf "%d" "$highestBlock")
+                local decimal_currentBlock=$(printf "%d" "$currentBlock")
+                local result=$((decimal_currentBlock * 100 / decimal_highestBlock))
+                echo " and syncing ${result}%."
+            fi
         else
-            highestBlock=$(echo "$execution_json" | grep -o '"highestBlock":"[^"]*"' | cut -d '"' -f 4)
-            currentBlock=$(echo "$execution_json" | grep -o '"currentBlock":"[^"]*"' | cut -d '"' -f 4)
-            decimal_highestBlock=$(printf "%d" "$highestBlock")
-            decimal_currentBlock=$(printf "%d" "$currentBlock")
-            result=$((decimal_currentBlock * 100 / decimal_highestBlock))
-            info "The ${1} is syncing ${result}%."
+            info "Waiting to connect with peers"
         fi
     else
-        info "The ${1} stopped."
+        info "The ${1} ${2} stopped."
     fi
 }
 
 function consensus_syncing_status
 {
-    init_network
-    if [ "$consensus_pid" ]; then
-        info "The ${1} running: pid=${consensus_pid}."
-        consensus_json=$(curl -s 127.0.0.1:${ports[${network}.grpc-gateway-port]}/eth/v1/node/syncing)
-        if echo "$consensus_json" | grep -q '"is_syncing":false'; then
-            info "The ${1} synced."
-        elif [ -z "$consensus_json" ]; then
-            info "Waiting to connect with peers"
+    if [ ${project_pids["${1}_${2}_pid"]} ]; then
+        echo -ne $(info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}",")
+        local consensus_json=$(curl -s 127.0.0.1:${ports[${1}.grpc-gateway-port]}/eth/v1/node/syncing)
+        if [ 0 -eq $? ]; then
+            if echo "$consensus_json" | grep -q '"is_syncing":false'; then
+                echo " and full synced."
+            else
+                local headSlot=$(echo "$consensus_json" | grep -o '"head_slot":"[^"]*"' | cut -d '"' -f 4)
+                local syncDistance=$(echo "$consensus_json" | grep -o '"sync_distance":"[^"]*"' | cut -d '"' -f 4)
+                local decimal_headSlot=$(printf "%d" "$headSlot")
+                local decimal_syncDistance=$(printf "%d" "$syncDistance")
+                local block_sum=$((decimal_headSlot + decimal_syncDistance))
+                local result=$((decimal_headSlot * 100 / block_sum))
+                echo " and syncing ${result}%."
+            fi
         else
-            headSlot=$(echo "$consensus_json" | grep -o '"head_slot":"[^"]*"' | cut -d '"' -f 4)
-            syncDistance=$(echo "$consensus_json" | grep -o '"sync_distance":"[^"]*"' | cut -d '"' -f 4)
-            decimal_headSlot=$(printf "%d" "$headSlot")
-            decimal_syncDistance=$(printf "%d" "$syncDistance")
-            block_sum=$((decimal_headSlot + decimal_syncDistance))
-            result=$((decimal_headSlot * 100 / block_sum))
-            info "The ${1} is syncing ${result}%."
+            info "Waiting to connect with peers"
         fi
     else
-        info "The ${1} stopped."
+        info "The ${1} ${2} stopped."
     fi
 }
 
 function status_function
 {
-    projects_array=($projects)
-    execution_syncing_status "${projects_array[0]}"
-    consensus_syncing_status "${projects_array[1]}"
+    check_status_dependency
+    for i in $network_name; do
+        for j in $projects; do
+            !(${j}_syncing_status $i $j)
+        done
+    done
 }
 
 ${action}_function
