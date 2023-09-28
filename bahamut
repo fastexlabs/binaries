@@ -10,6 +10,7 @@ script_name="bahamut"
 network_name="sahara oasis"
 projects="execution consensus"
 download_path="$path/download"
+min_sync_peers="min-sync-peers 1"
 
 github_binaries="fastexlabs/binaries"
 binaries_tags_url="https://api.github.com/repos/$github_binaries/tags"
@@ -298,14 +299,6 @@ function check_stop_dependency_and_init
     fi
 }
 
-function check_status_dependency
-{
-    if [ "${#project_pids[@]}" -eq 0 ]; then
-        info "There is no running process."
-        exit 0
-    fi
-}
-
 function check_config
 {
     for i in $network_name; do
@@ -356,7 +349,7 @@ function read_confirmation_and_stop
     if [ "Y" == "$c" ]; then
         kill_process $1 $2 $3 "-15"
         `ps -p $3` > /dev/null 2>&1
-        if [ 0 -eq $? ]; then
+        if [ $? -eq 0 ]; then
             kill_process $1 $2 $3 "-9"
         fi
     fi
@@ -365,29 +358,32 @@ function read_confirmation_and_stop
 function download_binaries_and_extract
 {
     if [ "install" == "$action" ] && [ -x "$path/Bahamut/$1" ]; then
-        info "The $1 binary is exist."
+        info "The ${1} binary is exist."
     else
         echo -ne $(info "Starting the process of downloading ${1} binaries file...")
         local j=$(curl -s -i -H "Accept: application/vnd.github.v3+json" "$binaries_releases_url")
-        local u=$(grep browser_download_url <<< "$j" | sed 's/.*"browser_download_url": "\(.*\)"/\1/')
-        for url in $u; do
-            wget -P $download_path/ $u > /dev/null 2>&1
-            if ! [ 0 -eq $? ]; then
-                error "Failed to download the binaries."
-                exit 1
-            fi
-        done
+        local urls=$(grep browser_download_url <<< "$j" | sed 's/.*"browser_download_url": "\(.*\)"/\1/')
+        local url=$(echo "$urls" | grep -o "https://[^ ]*${1}[^ ]*")
+        wget -P $download_path/ $url > /dev/null 2>&1
+        if ! [ $? -eq 0 ]; then
+            error "Failed to download the binaries."
+            exit 1
+        fi
         echo " Done"
         echo -ne $(info "Starting the process of extract ${1} binaries file...")
         cd $download_path
         for file in $(ls | grep tar.gz); do
             tar -xzf $file > /dev/null 2>&1 && rm $file > /dev/null 2>&1
-            if ! [ 0 -eq $? ]; then
-                error "Failed to extract or remove the binaries file."
+            if ! [ $? -eq 0 ]; then
+                error "Failed to extract or remove ${1} binaries file."
                 exit 1
             fi
         done
-        mv $download_path/$1 $path/Bahamut/ > /dev/null 2>&1
+        mv $download_path/$i $path/Bahamut/ > /dev/null 2>&1
+        if ! [ $? -eq 0 ]; then
+            error "Failed to move ${1} binaries file."
+            exit 1
+        fi
         echo " Done"
         cd - > /dev/null
     fi
@@ -397,7 +393,7 @@ function download_bahamut_script
 {
     echo -ne $(info "Starting the process of downloading ${script_name} script...")
     wget -P $download_path/ $bahamut_script_url > /dev/null 2>&1
-    if ! [ 0 -eq $? ]; then
+    if ! [ $? -eq 0 ]; then
         error "Failed to download the ${script_name} script."
         exit 1
     fi
@@ -426,7 +422,7 @@ function download_configurations
     else
         echo -ne $(info "Starting the process of downloading $(get_config_name ${1}) file...")
         wget -P $download_path/ ${!cu} > /dev/null 2>&1
-        if ! [ 0 -eq $? ]; then
+        if ! [ $? -eq 0 ]; then
             error "Failed to download configs files."
             exit 1
         fi
@@ -443,7 +439,7 @@ function download_genesis
     else
         echo -ne $(info "Starting the process of downloading genesis.ssz file...")
         wget -P $download_path/ $genesis_url > /dev/null 2>&1
-        if ! [ 0 -eq $? ]; then
+        if ! [ $? -eq 0 ]; then
             error "Failed to download genesis.ssz file."
             exit 1
         fi
@@ -468,7 +464,7 @@ function get_systemctl_consensus_start
     if [ "oasis" == "$network" ]; then
         o="--genesis-state $path/Bahamut/oasis/genesis.ssz ${oasis_bootstrap_node}"
     fi
-    echo "ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use --p2p-static-id --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex ${o}"
+    echo "ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use --p2p-static-id --${min_sync_peers} --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex ${o}"
 }
 
 function generate_systemctl_files
@@ -584,7 +580,7 @@ function start_consensus
         --rpc-port ${ports[${network}.rpc-port]} \
         --accept-terms-of-use \
         --p2p-static-id \
-        --min-sync-peers 1 \
+        --${min_sync_peers} \
         --${network} \
         --datadir=$path/Bahamut/$network/datadirs/consensus \
         --jwt-secret=$path/Bahamut/${network}/datadirs/jwt.hex > $beacon_chain_log_file 2>&1 &
@@ -676,31 +672,106 @@ function update_function
     rm -rf $download_path
 }
 
+function check_execution_peers_count
+{
+    local f=$(get_config_file $1)
+    local http_port=$(init_http_port ${f})
+    local peers_count_request=$(curl -s \
+                        -H "Content-Type: application/json" \
+                        -X POST \
+                        --data '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' \
+                        127.0.0.1:${http_port})
+    if [ $? -eq 0 ]; then
+        local peers_count=$(echo "$peers_count_request" | grep -o '"result":"[^"]*"' | cut -d '"' -f 4)
+        local decimal_peers_count=$(printf "%d" "$peers_count")
+        if [ $decimal_peers_count -eq 0 ]; then
+            info "The ${1} ${2} is not syncing. Waiting to connect with peers."
+            exit 0
+        fi
+    else
+        info "The ${1} ${2} peer count request failed."
+        exit 1
+    fi
+}
+
+function get_execution_json
+{
+    local f=$(get_config_file $1)
+    local http_port=$(init_http_port ${f})
+    local execution_json=$(curl -s \
+                        -H "Content-Type: application/json" \
+                        -X POST \
+                        --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
+                        127.0.0.1:${http_port})
+    if [ $? -ne 0 ]; then
+        info "The ${1} ${2} syncing status request failed."
+        exit 1
+    fi
+    echo "$execution_json"
+}
+
+function check_execution_block_number
+{
+    local f=$(get_config_file $1)
+    local http_port=$(init_http_port ${f})
+    local block_number_request=$(curl -s \
+                        -H "Content-Type: application/json" \
+                        -X POST \
+                        --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+                        127.0.0.1:${http_port})
+    if [ $? -eq 0 ]; then
+        local block_number=$(echo "$block_number_request" | grep -o '"result":"[^"]*"' | cut -d '"' -f 4)
+        local decimal_block_number=$(printf "%d" "$block_number")
+        if $3 && [ $decimal_block_number -eq 0 ]; then
+            info "Please wait for blok information."
+            exit 0
+        fi
+    else
+        info "The ${1} ${2} syncing block number request failed."
+        exit 1
+    fi
+}
+
+function check_consensus_peers_count
+{
+    local peers_count_request=$(curl -s 127.0.0.1:${ports[${1}.grpc-gateway-port]}/eth/v1/node/peer_count)
+    if [ $? -eq 0 ]; then
+        local peers_count=$(echo "$peers_count_request" | grep -o '"connected":"[^"]*"' | cut -d '"' -f 4)
+        if [ ! -z "$peers_count" ]; then
+            if [ $peers_count -eq 0 ]; then
+                info "The ${1} ${2} is not syncing. Waiting to connect with peers."
+                exit 0
+            fi
+        else
+            info "Peers not found. Please wait."
+        fi
+    else
+        info "The ${1} ${2} peer count request failed."
+        exit 1
+    fi
+}
+
 function execution_syncing_status
 {
     if [ ${project_pids["${1}_${2}_pid"]} ]; then
+        local flag=true
         check_config
-        local f=$(get_config_file $1)
-        local http_port=$(init_http_port ${f})
-        echo -ne $(info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}",")
-        local execution_json=$(curl -s \
-        -H "Content-Type: application/json" \
-        -X POST \
-        --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
-        127.0.0.1:${http_port})
-        if [ 0 -eq $? ]; then
-            if echo "$execution_json" | grep -q '"result":false'; then
-                echo " and full synced."
-            else
-                local highestBlock=$(echo "$execution_json" | grep -o '"highestBlock":"[^"]*"' | cut -d '"' -f 4)
-                local currentBlock=$(echo "$execution_json" | grep -o '"currentBlock":"[^"]*"' | cut -d '"' -f 4)
-                local decimal_highestBlock=$(printf "%d" "$highestBlock")
-                local decimal_currentBlock=$(printf "%d" "$currentBlock")
-                local result=$((decimal_currentBlock * 100 / decimal_highestBlock))
-                echo " and syncing ${result}%."
-            fi
+        check_execution_peers_count $1 $2
+        execution_json=$(get_execution_json $1 $2)
+        r=$(echo "$execution_json" | grep -q '"result":false')
+        if [ $? -eq 1 ]; then
+            flag=false
+        fi
+        check_execution_block_number $1 $2 $flag
+        if echo "$execution_json" | grep -q '"result":false'; then
+            info "The ${1} ${2} full synced."
         else
-            info "Waiting to connect with peers"
+            local highest_block=$(echo "$execution_json" | grep -o '"highestBlock":"[^"]*"' | cut -d '"' -f 4)
+            local current_block=$(echo "$execution_json" | grep -o '"currentBlock":"[^"]*"' | cut -d '"' -f 4)
+            local decimal_highest_block=$(printf "%d" "$highest_block")
+            local decimal_current_block=$(printf "%d" "$current_block")
+            local result=$((decimal_current_block * 100 / decimal_highest_block))
+            info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}" | current block=${decimal_current_block} | highest block=${decimal_highest_block} | syncing=${result}%."
         fi
     else
         info "The ${1} ${2} stopped."
@@ -710,22 +781,25 @@ function execution_syncing_status
 function consensus_syncing_status
 {
     if [ ${project_pids["${1}_${2}_pid"]} ]; then
-        echo -ne $(info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}",")
+        check_consensus_peers_count $1 $2
         local consensus_json=$(curl -s 127.0.0.1:${ports[${1}.grpc-gateway-port]}/eth/v1/node/syncing)
-        if [ 0 -eq $? ]; then
+        if [ $? -eq 0 ]; then
             if echo "$consensus_json" | grep -q '"is_syncing":false'; then
-                echo " and full synced."
+                info "The ${1} ${2} full synced."
             else
-                local headSlot=$(echo "$consensus_json" | grep -o '"head_slot":"[^"]*"' | cut -d '"' -f 4)
-                local syncDistance=$(echo "$consensus_json" | grep -o '"sync_distance":"[^"]*"' | cut -d '"' -f 4)
-                local decimal_headSlot=$(printf "%d" "$headSlot")
-                local decimal_syncDistance=$(printf "%d" "$syncDistance")
-                local block_sum=$((decimal_headSlot + decimal_syncDistance))
-                local result=$((decimal_headSlot * 100 / block_sum))
-                echo " and syncing ${result}%."
+                local head_slot=$(echo "$consensus_json" | grep -o '"head_slot":"[^"]*"' | cut -d '"' -f 4)
+                local sync_distance=$(echo "$consensus_json" | grep -o '"sync_distance":"[^"]*"' | cut -d '"' -f 4)
+                local block_sum=$((head_slot + sync_distance))
+                if [ ! -z "$block_sum" ] && [ $block_sum -ne 0 ]; then
+                    local result=$((head_slot * 100 / block_sum))
+                    info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}" | syncing=${result}%."
+                else
+                    info "Please wait for blok information."
+                fi
             fi
         else
-            info "Waiting to connect with peers"
+            info "The ${1} ${2} syncing status request failed."
+            exit 1
         fi
     else
         info "The ${1} ${2} stopped."
@@ -734,12 +808,32 @@ function consensus_syncing_status
 
 function status_function
 {
-    check_status_dependency
-    for i in $network_name; do
-        for j in $projects; do
-            !(${j}_syncing_status $i $j)
+    local c=0
+    local n=""
+    local p=$(pidof $projects)
+    if [ ! -z "$p" ]; then
+        for i in $network_name; do
+            local o=$(ps -fp $p)
+            if echo "$o" | grep -q $i; then
+                ((c=c+1))
+                n=$i
+            fi
         done
-    done
+    fi
+    if [ $c -eq 0 ]; then
+        info "There is no running process."
+        exit 0
+    elif [ $c -eq 1 ]; then
+        for i in $projects; do
+            !(${i}_syncing_status $n $i)
+        done
+    else
+        for i in $network_name; do
+            for j in $projects; do
+                !(${j}_syncing_status $i $j)
+            done
+        done
+    fi
 }
 
 ${action}_function
