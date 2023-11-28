@@ -3,12 +3,12 @@
 path=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 action=""
 network=""
-version="v2.0.1"
+version="v2.0.2"
 github_version_count=0
 kill_attempt_count=15
 script_name="bahamut"
 network_name="sahara oasis"
-projects="execution consensus"
+projects="execution"
 download_path="$path/download"
 min_sync_peers="min-sync-peers 1"
 
@@ -72,6 +72,11 @@ function blue()
     echo -e "\033[94m$1\033[0m"
 }
 
+function yellow()
+{
+    echo -e "\033[33m$1\033[0m"
+}
+
 function error
 {
     echo "$(red "Error: ")$1"
@@ -87,48 +92,89 @@ function info
     echo "$(green "Info: ")$1"
 }
 
+function conf
+{
+    echo "$(yellow "Conf: ")$1"
+}
+
+function start_spinner
+{
+    set +m
+    echo -ne $(info "${1}")
+    while : ; do
+        for X in / - \\ \|; do
+            echo -en "\b$X"
+            sleep 0.1
+        done
+    done & 2>/dev/null
+    spinner_pid=$!
+}
+
+function stop_spinner
+{
+    { kill -9 $spinner_pid && wait; } 2>/dev/null
+    set -m
+    echo -en "\033[2K\r"
+}
+
 function print_help
 {
-    #Name:
-    echo "Name:"
-    echo -e "\tThis script automatically sets up and runs Caravan - the Execution layer of Fastex chain (Bahamut) blockchain."
+    echo "BAHAMUT"
+    echo -e "\n"
+    #Name
+    echo "NAME:"
+    echo -e "\tbahamut"
+    #DESCRIPTION
+    echo -e "\n"
+    echo "DESCRIPTION:"
+    echo -e "\tThis script automatically sets up and runs Caravan - the Execution and Beacon-Chain -the Consensus layers of Fastex chain (Bahamut) blockchain."
     echo -e "\tThe execution layer client that operates Fastex Chain is written in Go. Running the execution layer helps the user setup and maintain a Caravan node."
     echo -e "\tThe consensus layer is an implementation of the proof-of-stake-and-activity consensus specification." 
-    #Usage:
+    #Usage
     echo -e "\n"
-    echo "Usage:"
+    echo "USAGE:"
     echo -e "\tbahamut OPTIONS [arguments]" 
-    #Mandatory options:
+    #Mandatory options
     echo -e "\n"
-    echo "Mandatory OPTIONS:"
-    echo -e "\tinstall|start|stop|restart|status|update - Main action(s) to be performed."
-    echo -e "\tstart - Starts the Caravan and Beacon-chain nodes"
-    echo -e "\tstop - Stops the Caravan and Beacon-chain nodes."
-    echo -e "\tstatus - Returns the current status of Caravan and beacon-chain."
-    echo -e "\tinstall - Installs Caravan and Beacon-chain dependencies needed for the start."
-    echo -e "\tupdate - Updates Caravan and Beacon-chain binaries and native scripts."
-    echo -e "\t-n, --network - Necessary to connect to the network. Network can be Sahara (mainnet) or Oasis (testnet)."
-    #Arguments:
+    echo "MANDATORY OPTIONS:"
+    echo -e "\tinstall|start|stop|restart|status|update|reset - Main action(s) to be performed."
+    echo -e "\tstart - Starts the Execution and Consensus Layer nodes"
+    echo -e "\tstop - Stops the Execution and Consensus Layer nodes."
+    echo -e "\tstatus - Returns the current status of Execution and Consensus Layer nodes."
+    echo -e "\tinstall - Installs the Execution and Consensus Layer dependencies needed for the start."
+    echo -e "\tupdate - Updates Execution and Consensus Layer binaries and native scripts."
+    echo -e "\treset - Resets the Execution and Consensus Layer databases."
+    #Arguments
     echo -e "\n"
-    echo "arguments:"
+    echo "ARGUMENTS:"
     echo -e "\t--help, -h - Show help."
     echo -e "\t--version, -v - Manually set the binaries version. Default version is the latest version."
-    #Examples:
+    echo -e "\t-n, --network - Must connect to the network. Network can be Sahara (mainnet) or Oasis (testnet)."
+    #Examples
     echo -e "\n"
-    echo -e "Examples:"
-    echo -e "\t- ./bahamut install"
+    echo -e "EXAMPLES:"
     echo -e "\t- ./bahamut start -n=oasis"
-    echo -e "\t- ./bahamut update --version v1.0.0"
-    echo -e "\t- ./bahamut stop"
-    echo -e "\t- ./bahamut restart"
-    echo -e "\t- ./bahamut status"
-    #Systemctl commands:
+    echo -e "\t\t Start oasis node. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut install."
     echo -e "\n"
-    echo -e "Systemctl commands examples:"
-    echo -e "\tsudo systemctl start bahamut_oasis_execution.service - Start the Caravan node."
-    echo -e "\tsudo systemctl stop bahamut_sahara_consensus.service - Stop the Beacon-chain node."
-    echo -e "\tsudo systemctl restart bahamut_sahara_consensus.service - Restart the Beacon-chain node."
-    echo -e "\tsudo systemctl status bahamut_oasis_execution.service - Show the Beacon-chain node status."
+    echo -e "\t- ./bahamut update --version v1.0.0"
+    echo -e "\t\t Update bahamut script with binaries v1.0.0 version. If there is a running process, terminate it with Stop action. Example ./bahamut stop."
+    echo -e "\n"
+    echo -e "\t- ./bahamut stop"
+    echo -e "\t\t If Sahara and Oasis are running at the same time, specify which network to swich off. Example ./bahamut stop --network oasis."
+    echo -e "\n"
+    echo -e "\t- ./bahamut restart"
+    echo -e "\t\t If Sahara and Oasis are running at the same time, specify which network to restart. Example ./bahamut restart --network oasis."
+    echo -e "\n"
+    echo -e "\t- ./bahamut reset"
+    echo -e "\t\t If neither Sahara nor Oasis network is specified, both databases will be reset. In order to reset one of them, provide the network name. Example ./bahamut reset -n=oasis."
+    #Systemctl commands
+    echo -e "\n"
+    echo -e "SYSTEMCTL COMMANDS EXAMPLES:"
+    echo -e "\tsudo systemctl start bahamut_oasis_execution.service - Start the Execution Layer node."
+    echo -e "\tsudo systemctl stop bahamut_sahara_consensus.service - Stop the Consensus Layer node."
+    echo -e "\tsudo systemctl restart bahamut_sahara_consensus.service - Restart the Consensus Layer node."
+    echo -e "\tsudo systemctl status bahamut_oasis_execution.service - Show the Execution Layer node status."
+    echo -e "\n"
 }
 
 function check_network()
@@ -185,7 +231,7 @@ while [[ $# -gt 0 ]]; do
             shift $(get_shift $1)
             ((github_version_count=github_version_count + 1))
             ;;
-        start|stop|status|restart|install|update)
+        start|stop|status|restart|install|update|reset)
             check_action
             action=$1
             shift
@@ -198,7 +244,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$action" ]; then
-    error "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\", \"update\" is missing!!!"
+    error "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\", \"update\", \"reset\" is missing!!!"
     info "For more details please use -h|--help option."
     exit 1
 fi
@@ -207,7 +253,7 @@ fi
 #This is done for users who ran the script on the mainnet
 if [ -z "${project_pids["oasis_execution_pid"]}" ] && [ -z "${project_pids["sahara_execution_pid"]}" ] && [ -d "$path/Bahamut/mainnet" ]; then
     rm -rf $path/Bahamut/sahara
-    mv $path/Bahamut/mainnet $path/Bahamut/sahara
+    mv -f $path/Bahamut/mainnet $path/Bahamut/sahara
 fi
 
 if [ "mainnet" == "$network" ]; then
@@ -219,18 +265,28 @@ fi
 function read_confirmation()
 {
     OIFS=$IFS
-    IFS='/'
+    IFS='/ or'
     while [ true ]; do
         read -p "$1 [$2] " -r
-        v=`echo "$REPLY" | tr '[:upper:]' '[:lower:]'`
+        v=$(echo "$REPLY" | tr '[:upper:]' '[:lower:]')
         for x in $2; do
-            c=`echo "$x" | tr '[:upper:]' '[:lower:]'`
+            c=$(echo "$x" | tr '[:upper:]' '[:lower:]')
             if [ "$c" == "$v" ]; then
                 IFS=$OIFS
                 echo $x
                 return
             fi
         done
+
+        if [ "$v" == "yes" ] || [ "$v" == "y" ]; then
+            IFS=$OIFS
+            echo "Y"
+            return
+        elif [ "$v" == "no" ]; then
+            IFS=$OIFS
+            echo "No"
+            return
+        fi
     done
 }
 
@@ -309,7 +365,7 @@ function check_config
     done
 }
 
-function check_update_dependency
+function check_update_and_reset_dependency
 {
     if [ ! -d $path/Bahamut ]; then
         error "Please do the following first ./bahamut install"
@@ -318,7 +374,7 @@ function check_update_dependency
     for i in $network_name; do
         for j in $projects; do
             if [ ! -z "${project_pids["${i}_${j}_pid"]}" ]; then
-                error "To update, it is necessary to stop the running processes. ./bahamut stop"
+                error "To ${action}, it is necessary to stop the running processes. ./bahamut stop"
                 exit 1
             fi
         done
@@ -345,7 +401,7 @@ function check_versions_flag
 
 function read_confirmation_and_stop
 {
-    local c=$(read_confirmation "$(red "Do you want to ${action} running ${1} ${2} process?")" "Y/N")
+    local c=$(read_confirmation "$(conf "Do you want to ${action} running ${1} ${2} process? Enther:")" "Y/n")
     if [ "Y" == "$c" ]; then
         kill_process $1 $2 $3 "-15"
         `ps -p $3` > /dev/null 2>&1
@@ -360,32 +416,33 @@ function download_binaries_and_extract
     if [ "install" == "$action" ] && [ -x "$path/Bahamut/$1" ]; then
         info "The ${1} binary is exist."
     else
-        echo -ne $(info "Starting the process of downloading ${1} binaries file...")
+        info "Starting the process of downloading ${1} binaries file. Please wait."
         local j=$(curl -s -i -H "Accept: application/vnd.github.v3+json" "$binaries_releases_url")
         local urls=$(grep browser_download_url <<< "$j" | sed 's/.*"browser_download_url": "\(.*\)"/\1/')
         local url=$(echo "$urls" | grep -o "https://[^ ]*${1}[^ ]*")
-        wget -P $download_path/ $url > /dev/null 2>&1
+        wget -P $download_path/ $url -q --show-progress
         if ! [ $? -eq 0 ]; then
             error "Failed to download the binaries."
             exit 1
         fi
-        echo " Done"
-        echo -ne $(info "Starting the process of extract ${1} binaries file...")
         cd $download_path
         for file in $(ls | grep tar.gz); do
+            start_spinner "Starting the process of extract ${1} binary file. Please wait.."
             tar -xzf $file > /dev/null 2>&1 && rm $file > /dev/null 2>&1
             if ! [ $? -eq 0 ]; then
                 error "Failed to extract or remove ${1} binaries file."
                 exit 1
+            else
+                stop_spinner
             fi
+            info "Starting the process of extract ${1} binary file. Please wait. Done."
         done
-        mv $download_path/$i $path/Bahamut/ > /dev/null 2>&1
+        cd - > /dev/null
+        mv -f $download_path/$1 $path/Bahamut/ > /dev/null 2>&1
         if ! [ $? -eq 0 ]; then
             error "Failed to move ${1} binaries file."
             exit 1
         fi
-        echo " Done"
-        cd - > /dev/null
     fi
 }
 
@@ -398,7 +455,7 @@ function download_bahamut_script
         exit 1
     fi
     chmod +x $download_path/$script_name
-    mv $download_path/$script_name $path > /dev/null 2>&1
+    mv -f $download_path/$script_name $path > /dev/null 2>&1
     echo " Done"
 }
 
@@ -420,31 +477,29 @@ function download_configurations
     if [ "install" == "$action" ] && [ -f "${cf}" ]; then
         info "The $1 config file is exist."
     else
-        echo -ne $(info "Starting the process of downloading $(get_config_name ${1}) file...")
-        wget -P $download_path/ ${!cu} > /dev/null 2>&1
+        info "Starting the process of downloading $(get_config_name ${1}) file..."
+        wget -P $download_path/ ${!cu} -q --show-progress
         if ! [ $? -eq 0 ]; then
             error "Failed to download configs files."
             exit 1
         fi
         local n=$(get_config_name ${1})
-        mv "$download_path/${n}" $path/Bahamut/${1}/ > /dev/null 2>&1
-        echo " Done"
+        mv -f "$download_path/${n}" $path/Bahamut/${1}/ > /dev/null 2>&1
     fi
 }
 
 function download_genesis
 {
-    if [ -f $path/Bahamut/oasis/genesis.ssz ]; then
+    if [ "install" == "$action" ] && [ -f $path/Bahamut/oasis/genesis.ssz ]; then
         info "The genesis.ssz file is exists."
     else
-        echo -ne $(info "Starting the process of downloading genesis.ssz file...")
-        wget -P $download_path/ $genesis_url > /dev/null 2>&1
+        info "Starting the process of downloading genesis.ssz file..."
+        wget -P $download_path/ $genesis_url -q --show-progress
         if ! [ $? -eq 0 ]; then
             error "Failed to download genesis.ssz file."
             exit 1
         fi
-        mv "$download_path/genesis.ssz" $path/Bahamut/oasis/ > /dev/null 2>&1
-        echo " Done"
+        mv -f "$download_path/genesis.ssz" $path/Bahamut/oasis/ > /dev/null 2>&1
     fi
 }
 
@@ -500,14 +555,14 @@ WantedBy=multi-user.target"
 function init_directory
 {
     local f=false
-    if [ ! -f "$path/Bahamut/oasis/datadirs/jwt.hex" ] || [ ! -f "$path/Bahamut/sahara/datadirs/jwt.hex" ]; then
-        f=true
-    fi
+    for i in $network_name; do
+        if [ ! -f "$path/Bahamut/${i}/datadirs/jwt.hex" ]; then
+            rm -rf $path/Bahamut/${i}/datadirs/*
+            f=true
+        fi
+    done
     for i in $network_name; do
         for j in $projects; do
-            if [ "true" == "$f" ]; then
-                rm -rf $path/Bahamut/${i}/datadirs/*
-            fi
             mkdir -p $path/Bahamut/${i}/datadirs/${j}
             mkdir -p $path/Bahamut/${i}/log/${j}
         done
@@ -526,7 +581,7 @@ function init_directory
 
 function init_systemctl
 {
-    c=$(read_confirmation "$(red "Would you like to run the script with systemctl")" "Y/N")
+    c=$(read_confirmation "$(conf "Would you like to run the script with systemctl? Enther:")" "Y/n")
     if [ "Y" == "$c" ]; then
         info "This script requires root privileges."
         for i in $projects; do
@@ -662,9 +717,10 @@ function restart_function
 function update_function
 {
     check_versions_flag
-    check_update_dependency
+    check_update_and_reset_dependency
     rm -rf $download_path
     mkdir -p $path/download
+    download_genesis
     for i in $projects; do
         download_binaries_and_extract $i
     done
@@ -723,7 +779,7 @@ function check_execution_block_number
         local block_number=$(echo "$block_number_request" | grep -o '"result":"[^"]*"' | cut -d '"' -f 4)
         local decimal_block_number=$(printf "%d" "$block_number")
         if $3 && [ $decimal_block_number -eq 0 ]; then
-            info "Please wait for blok information."
+            info "Please wait for block information."
             exit 0
         fi
     else
@@ -743,7 +799,8 @@ function check_consensus_peers_count
                 exit 0
             fi
         else
-            info "Peers not found. Please wait."
+            info "The ${2} peers not found. Please wait."
+            exit 0
         fi
     else
         info "The ${1} ${2} peer count request failed."
@@ -794,7 +851,7 @@ function consensus_syncing_status
                     local result=$((head_slot * 100 / block_sum))
                     info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}" | syncing=${result}%."
                 else
-                    info "Please wait for blok information."
+                    info "Please wait ${2} block information."
                 fi
             fi
         else
@@ -833,6 +890,39 @@ function status_function
                 !(${j}_syncing_status $i $j)
             done
         done
+    fi
+}
+
+function reset_function
+{
+    local p=""
+    check_update_and_reset_dependency
+    if [ -z "$network" ]; then
+        p="Network not specified. Do you want to drop oasis and sahara entire contents of databases? Enther:"
+        network="sahara oasis"
+    else
+        p="Do you want to drop ${network} entire contents of database? Enther:"
+    fi
+    c=$(read_confirmation "$(conf "${p}")" "Y/n")
+    if [ "Y" == "$c" ]; then
+        for i in $network; do
+            for j in $projects; do
+                if [ -z "$(ls -A $path/Bahamut/${i}/datadirs/${j}/)" ]; then
+                    info "The ${i} ${j} databases have been cleared."
+                else
+                    rm -rf $path/Bahamut/${i}/datadirs/${j}/*
+                    if [ $? -eq 0 ]; then
+                        info "The ${i} ${j} database cleanup completed successfully."
+                    else
+                        error "Failed to clear databaes ${i} ${j}."
+                        exit 1
+                    fi
+                fi
+            done
+        done
+    else
+        info "Deny action with reset."
+        exit 0
     fi
 }
 
