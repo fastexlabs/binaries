@@ -3,7 +3,7 @@
 path=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 action=""
 network=""
-version="v2.0.2"
+version="v2.1.0"
 github_version_count=0
 kill_attempt_count=15
 script_name="bahamut"
