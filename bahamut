@@ -8,7 +8,7 @@ github_version_count=0
 kill_attempt_count=15
 script_name="bahamut"
 network_name="sahara oasis"
-projects="execution"
+projects="execution consensus"
 download_path="$path/download"
 min_sync_peers="min-sync-peers 1"
 
