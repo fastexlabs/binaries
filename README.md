@@ -17,13 +17,14 @@ This repository provides a management script for the Bahamut blockchain executio
 Ensure that you have the following prerequisites installed on your system:
 
 - [Curl](https://curl.se/download.html) and [Wget](https://www.gnu.org/software/wget/)
+- [pidof](https://formulae.brew.sh/formula/pidof)
 
 ## Installation
 
 1. Download the `bahamut` management script:
 
 ```bash
-git clone 
+git clone
 chmod +x bahamut
 ```
 
