@@ -6,32 +6,24 @@ network=""
 version="v2.1.2"
 github_version_count=0
 kill_attempt_count=15
-script_name="bahamut"
+script_name="bahamut_validator"
 network_name="sahara oasis"
-projects="execution consensus"
+projects="validator"
 download_path="$path/download"
 min_sync_peers="min-sync-peers 1"
 
 github_binaries="fastexlabs/binaries"
-branch="validator-integration"
 binaries_tags_url="https://api.github.com/repos/$github_binaries/tags"
 binaries_releases_url="https://api.github.com/repos/$github_binaries/releases/tags/${version}"
-genesis_url="https://github.com/${github_binaries}/raw/${branch}/genesis.ssz"
-oasis_config_url="https://github.com/${github_binaries}/raw/${branch}/oasis_config.toml"
-sahara_config_url="https://github.com/${github_binaries}/raw/${branch}/sahara_config.toml"
-bahamut_script_url="https://github.com/${github_binaries}/raw/${branch}/${script_name}"
+bahamut_validator_script_url="https://github.com/${github_binaries}/raw/master/${script_name}"
+
+fee_recipient=""
+validator_keys_dir=""
+public_keys=""
 
 declare -A ports
-ports=( [sahara.p2p-udp-port]=12000
-        [sahara.p2p-tcp-port]=13000
-        [sahara.grpc-gateway-port]=3500
-        [sahara.rpc-port]=4000
-        [sahara.authrpc]=8551
-        [oasis.p2p-udp-port]=12001
-        [oasis.p2p-tcp-port]=13001
-        [oasis.grpc-gateway-port]=3501
-        [oasis.rpc-port]=4001
-        [oasis.authrpc]=8552 )
+ports=( [sahara.rpc-port]=4000
+        [oasis.rpc-port]=4001 )
 
 declare -A project_pids
 for i in $projects; do
@@ -49,9 +41,6 @@ for i in $projects; do
         fi
     done
 done
-
-
-oasis_bootstrap_node="--bootstrap-node="enr:-MK4QDW72KTjU2RcUd3SMUWz9vW9IHMCstEyiErHLnw5i-kIO0FHBYsSaV3xxYI8ynjGnRSutgfCqheaOVJ0dVlhFlKGAYoXK-y5h2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCPDPg2Jc2VjcDI1NmsxoQJINwhsm_QLHl4wLSJ2HptdrGc1DIFsNUrKxaFBADcZB4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QEAoUybSi3BMLP4Pig3-N02Um0ANaBOtFCGVWlvfeQb5GQrcIIFA9eQYUKtnkWHmDNf5Avqt0TNoTO-GHfZv4V-GAYoXN1lzh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYh7mJc2VjcDI1NmsxoQMv3ezcnOCiGBm0PSnt7sgPVNDVZ1NAC1igDKWRlcBBe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QPbEhAr_q9JW6U76VgZVdKyLhaVo82IDyuuTTQdHNzucPkdyWhVA15RSuH-SiPmUXjORtPS2f7msNbB-ynO_KzeGAYoXc4IFh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYycmJc2VjcDI1NmsxoQJ4dFs_DPW7THGr7KfmuvdNUXLoFjZ1YfaPFUl89H8b0YhzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A""
 
 function red()
 {
@@ -128,9 +117,7 @@ function print_help
     #DESCRIPTION
     echo -e "\n"
     echo "DESCRIPTION:"
-    echo -e "\tThis script automatically sets up and runs Caravan - the Execution and Beacon-Chain -the Consensus layers of Fastex chain (Bahamut) blockchain."
-    echo -e "\tThe execution layer client that operates Fastex Chain is written in Go. Running the execution layer helps the user setup and maintain a Caravan node."
-    echo -e "\tThe consensus layer is an implementation of the proof-of-stake-and-activity consensus specification." 
+    echo -e "\tThis script automatically sets up and runs validator of Fastex chain (Bahamut) blockchain."
     #Usage
     echo -e "\n"
     echo "USAGE:"
@@ -138,43 +125,45 @@ function print_help
     #Mandatory options
     echo -e "\n"
     echo "MANDATORY OPTIONS:"
-    echo -e "\tinstall|start|stop|restart|status|update|reset - Main action(s) to be performed."
-    echo -e "\tstart - Starts the Execution and Consensus Layer nodes"
-    echo -e "\tstop - Stops the Execution and Consensus Layer nodes."
-    echo -e "\tstatus - Returns the current status of Execution and Consensus Layer nodes."
-    echo -e "\tinstall - Installs the Execution and Consensus Layer dependencies needed for the start."
-    echo -e "\tupdate - Updates Execution and Consensus Layer binaries and native scripts."
-    echo -e "\treset - Resets the Execution and Consensus Layer databases."
+    echo -e "\tinstall|start|stop|restart|list|update|reset|remove|import|exit - Main action(s) to be performed."
+    echo -e "\tstart - Starts the validator client"
+    echo -e "\tstop - Stops the validator client."
+    echo -e "\tlist - Returns the list of the imported validators."
+    echo -e "\tinstall - Installs the validator client dependencies needed for the start."
+    echo -e "\tupdate - Updates validator client binaries and native scripts."
+    echo -e "\treset - Resets the validator client databases."
+    echo -e "\tremove - Removes the imported validators."
     #Arguments
     echo -e "\n"
     echo "ARGUMENTS:"
     echo -e "\t--help, -h - Show help."
     echo -e "\t--version, -v - Manually set the binaries version. Default version is the latest version."
     echo -e "\t-n, --network - Must connect to the network. Network can be Sahara (mainnet) or Oasis (testnet)."
+	echo -e "\t--fee-recipient - Fee Recipient address."
+	echo -e "\t--validator-keys-dir - Validator keys directory"
+	echo -e "\t--public-keys - Validator's public keys"
     #Examples
     echo -e "\n"
     echo -e "EXAMPLES:"
-    echo -e "\t- ./bahamut start -n=oasis"
-    echo -e "\t\t Start oasis node. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut install."
+    echo -e "\t- ./bahamut_validator start -n=oasis"
+	echo -e "\t\t Start oasis node. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut_validator install."
     echo -e "\n"
-    echo -e "\t- ./bahamut update --version v1.0.0"
-    echo -e "\t\t Update bahamut script with binaries v1.0.0 version. If there is a running process, terminate it with Stop action. Example ./bahamut stop."
+    echo -e "\t- ./bahamut_validator update --version v1.0.0"
+    echo -e "\t\t Update bahamut script with binaries v1.0.0 version. If there is a running process, terminate it with Stop action. Example ./bahamut_validator stop."
     echo -e "\n"
-    echo -e "\t- ./bahamut stop"
-    echo -e "\t\t If Sahara and Oasis are running at the same time, specify which network to swich off. Example ./bahamut stop --network oasis."
+    echo -e "\t- ./bahamut_validator stop"
+    echo -e "\t\t If Sahara and Oasis are running at the same time, specify which network to swich off. Example ./bahamut_validator stop --network oasis."
     echo -e "\n"
-    echo -e "\t- ./bahamut restart"
-    echo -e "\t\t If Sahara and Oasis are running at the same time, specify which network to restart. Example ./bahamut restart --network oasis."
+	echo -e "\t- ./bahamut_validator restart"
+    echo -e "\t\t If Sahara and Oasis are running at the same time, specify which network to restart. Example ./bahamut_validator restart --network oasis."
     echo -e "\n"
-    echo -e "\t- ./bahamut reset"
-    echo -e "\t\t If neither Sahara nor Oasis network is specified, both databases will be reset. In order to reset one of them, provide the network name. Example ./bahamut reset -n=oasis."
+    echo -e "\t- ./bahamut_validator reset"
+    echo -e "\t\t If neither Sahara nor Oasis network is specified, both databases will be reset. In order to reset one of them, provide the network name. Example ./bahamut_validator reset -n=oasis."
     #Systemctl commands
     echo -e "\n"
     echo -e "SYSTEMCTL COMMANDS EXAMPLES:"
-    echo -e "\tsudo systemctl start bahamut_oasis_execution.service - Start the Execution Layer node."
-    echo -e "\tsudo systemctl stop bahamut_sahara_consensus.service - Stop the Consensus Layer node."
-    echo -e "\tsudo systemctl restart bahamut_sahara_consensus.service - Restart the Consensus Layer node."
-    echo -e "\tsudo systemctl status bahamut_oasis_execution.service - Show the Execution Layer node status."
+    echo -e "\tsudo systemctl start bahamut_oasis_validator.service - Start the validator client."
+    echo -e "\tsudo systemctl stop bahamut_sahara_validator.service - Stop the validator client."
     echo -e "\n"
 }
 
@@ -189,6 +178,23 @@ function check_network()
         exit 1
     fi
 }
+
+function check_fee_recipient
+{
+	if [ -z "$fee_recipient" ]; then
+        error "Fee recipient is mandatory option during start. Type --help or -h to see the correct options."
+        exit 1
+	fi
+	if ! [ 42 -eq ${#fee_recipient} ]; then
+        error "Fee recipient must be 20 bytes length address with `0x` prefix"
+        exit 1
+	fi
+	if ! [ "0x" = ${fee_recipient:0:2} ]; then
+        error "Fee recipient must be 20 bytes length address with `0x` prefix"
+        exit 1
+	fi
+}
+
 
 function check_action
 {
@@ -216,6 +222,26 @@ function get_option()
     fi
 }
 
+function read_fee_recipient
+{
+	if [ -z "$fee_recipient" ]; then
+		while [ true ]; do
+			read -p "Please enter your fee recipient address: " v
+			echo $v
+			if ! [[ 42 -eq ${#v} ]]; then
+				error "Fee recipient must be 20 bytes length address with \'0x\' prefix"
+				continue
+			fi
+			if ! [[ "0x" -eq ${v:0:2} ]]; then
+				error "Fee recipient must be 20 bytes length address with \'0x\' prefix"
+				continue
+			fi
+			fee_recipient=$v
+			break
+		done
+	fi
+}
+
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
@@ -227,12 +253,24 @@ while [[ $# -gt 0 ]]; do
             shift $(get_shift $1)
             check_network
             ;;
+		--fee-recipient|--fee-recipient=*)
+            fee_recipient=$(get_option $1 $2)
+            shift $(get_shift $1)
+			;;
+		--validator-keys-dir|--validator-keys-dir=*)
+            validator_keys_dir=$(get_option $1 $2)
+            shift $(get_shift $1)
+			;;
+		--public-keys|--public-keys=*)
+            public_keys=$(get_option $1 $2)
+            shift $(get_shift $1)
+			;;
         -v|--version|-v=*|--version=*)
             version=$(get_option $1 $2)
             shift $(get_shift $1)
             ((github_version_count=github_version_count + 1))
             ;;
-        start|stop|status|restart|install|update|reset)
+        start|stop|list|restart|install|update|reset|exit|import|remove)
             check_action
             action=$1
             shift
@@ -293,10 +331,6 @@ function read_confirmation()
 
 function check_install_dependency
 {
-    if ! which openssl > /dev/null 2>&1; then
-        error "The openssl is not found"
-        exit 1     
-    fi
     if ! which wget > /dev/null 2>&1; then
         error "The wget could not be found. You need to install wget to run the script."
         exit 1
@@ -323,10 +357,6 @@ function check_start_dependency
             exit 1
         fi
     done
-    if [ ! -f "$path/Bahamut/oasis/genesis.ssz" ]; then
-        error "The genesis.ssz not found. Please do the following first ./bahamut install"
-        exit 1
-    fi
 }
 
 function check_stop_dependency_and_init
@@ -354,16 +384,6 @@ function check_stop_dependency_and_init
             exit 1
         fi
     fi
-}
-
-function check_config
-{
-    for i in $network_name; do
-        if [ ! -f $(get_config_file $i) ]; then
-            info "The file $(get_config_name $i) do not exist. Please do the following first ./bahamut install"
-            exit 0
-        fi
-    done
 }
 
 function check_update_and_reset_dependency
@@ -447,10 +467,10 @@ function download_binaries_and_extract
     fi
 }
 
-function download_bahamut_script
+function download_bahamut_validator_script
 {
     echo -ne $(info "Starting the process of downloading ${script_name} script...")
-    wget -P $download_path/ $bahamut_script_url > /dev/null 2>&1
+    wget -P $download_path/ $bahamut_validator_script_url > /dev/null 2>&1
     if ! [ $? -eq 0 ]; then
         error "Failed to download the ${script_name} script."
         exit 1
@@ -460,67 +480,14 @@ function download_bahamut_script
     echo " Done"
 }
 
-function get_config_name
-{
-    echo "${1}_config.toml"
-}
-
-function get_config_file
-{
-    local n=$(get_config_name ${1})
-    echo "$path/Bahamut/${1}/${n}"
-}
-
-function download_configurations
-{
-    local cf=$(get_config_file ${1})
-    local cu=${1}_config_url
-    if [ "install" == "$action" ] && [ -f "${cf}" ]; then
-        info "The $1 config file is exist."
-    else
-        info "Starting the process of downloading $(get_config_name ${1}) file..."
-        wget -P $download_path/ ${!cu} -q --show-progress
-        if ! [ $? -eq 0 ]; then
-            error "Failed to download configs files."
-            exit 1
-        fi
-        local n=$(get_config_name ${1})
-        mv -f "$download_path/${n}" $path/Bahamut/${1}/ > /dev/null 2>&1
-    fi
-}
-
-function download_genesis
-{
-    if [ "install" == "$action" ] && [ -f $path/Bahamut/oasis/genesis.ssz ]; then
-        info "The genesis.ssz file is exists."
-    else
-        info "Starting the process of downloading genesis.ssz file..."
-        wget -P $download_path/ $genesis_url -q --show-progress
-        if ! [ $? -eq 0 ]; then
-            error "Failed to download genesis.ssz file."
-            exit 1
-        fi
-        mv -f "$download_path/genesis.ssz" $path/Bahamut/oasis/ > /dev/null 2>&1
-    fi
-}
-
 function get_systemctl_files_path
 {
     echo "/etc/systemd/system/bahamut_${1}_${2}.service"
 }
 
-function get_systemctl_execution_start
+function get_systemctl_validator_start
 {
-    echo "ExecStart=${path}/Bahamut/${2} --${1} --authrpc.jwtsecret=$path/Bahamut/${1}/datadirs/jwt.hex --config=$path/Bahamut/${1}/$(get_config_name ${1})"
-}
-
-function get_systemctl_consensus_start
-{
-    local o=""
-    if [ "oasis" == "$network" ]; then
-        o="--genesis-state $path/Bahamut/oasis/genesis.ssz ${oasis_bootstrap_node}"
-    fi
-    echo "ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use --p2p-static-id --${min_sync_peers} --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex ${o}"
+    echo "ExecStart=${path}/Bahamut/${2} --${1} --accept-terms-of-use --wallet-dir="${path}/Bahamut/${1}/datadirs/validator/wallet" --wallet-password-file="${path}/Bahamut/${1}/datadirs/validator/wallet_password.txt" --datadir="${path}/Bahamut/${1}/datadirs/validator" --suggested-fee-recipient="${fee_recipient}" --beacon-rpc-provider="127.0.0.1:${ports[${1}.rpc-port]}""
 }
 
 function generate_systemctl_files
@@ -555,27 +522,12 @@ WantedBy=multi-user.target"
 
 function init_directory
 {
-    local f=false
-    for i in $network_name; do
-        if [ ! -f "$path/Bahamut/${i}/datadirs/jwt.hex" ]; then
-            rm -rf $path/Bahamut/${i}/datadirs/*
-            f=true
-        fi
-    done
     for i in $network_name; do
         for j in $projects; do
             mkdir -p $path/Bahamut/${i}/datadirs/${j}
             mkdir -p $path/Bahamut/${i}/log/${j}
         done
     done
-    if [ "true" == "$f" ]; then
-        echo -ne $(info "Starting the create jwt.hex files..")
-        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/oasis/datadirs/jwt.hex
-        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/sahara/datadirs/jwt.hex
-        echo " Done"
-    else
-        info "The jwt.hex files exist."
-    fi
     rm -rf $download_path
     mkdir -p $download_path
 }
@@ -585,6 +537,7 @@ function init_systemctl
     c=$(read_confirmation "$(conf "Would you like to run the script with systemctl? Enter:")" "Y/n")
     if [ "Y" == "$c" ]; then
         info "This script requires root privileges."
+		read_fee_recipient
         for i in $projects; do
             for j in $network_name; do
                 service_file=${j}_${i}_system_file
@@ -609,57 +562,71 @@ function install_function
     check_install_dependency
     check_versions_flag
     init_directory
-    download_genesis
-    for i in $network_name; do
-        download_configurations $i
-    done
     for i in $projects; do
         download_binaries_and_extract $i
     done
+    install_deposit_cli
+    install_deposit_input
     rm -rf $download_path
     init_systemctl
 }
 
-function start_consensus
+function install_deposit_cli
 {
-    local o=""
-    if [ "oasis" == "$network" ]; then
-        o="--genesis-state $path/Bahamut/oasis/genesis.ssz ${oasis_bootstrap_node}"
-    fi
-    echo -ne $(info "Starting the new ${network} ${1} process...")
-    local beacon_chain_log_file="$path/Bahamut/${network}/log/consensus/${1}_`date +\"%Y_%m_%d_%T\"`"
-    nohup $path/Bahamut/$1 ${o} \
-        --execution-endpoint="http://127.0.0.1:${ports[${network}.authrpc]}" \
-        --p2p-udp-port ${ports[${network}.p2p-udp-port]} \
-        --p2p-tcp-port ${ports[${network}.p2p-tcp-port]} \
-        --grpc-gateway-port ${ports[${network}.grpc-gateway-port]} \
-        --rpc-port ${ports[${network}.rpc-port]} \
-        --accept-terms-of-use \
-        --p2p-static-id \
-        --${min_sync_peers} \
-        --${network} \
-        --datadir=$path/Bahamut/$network/datadirs/consensus \
-        --jwt-secret=$path/Bahamut/${network}/datadirs/jwt.hex > $beacon_chain_log_file 2>&1 &
-    echo " Done"
+	download_binaries_and_extract deposit
 }
 
-function start_execution
+function install_deposit_input
+{
+       download_binaries_and_extract deposit-input
+}
+
+function read_password
+{
+	unset password
+	prompt="Enter wallet password: "
+	while IFS= read -p "$prompt" -r -s -n 1 char
+	do
+	    if [[ $char == $'\0' ]]
+	    then
+	        break
+	    fi
+	    prompt='*'
+	    password+="$char"
+	done
+	echo "$password"
+	echo "$password" > "${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt"
+}
+
+function check_password_file
+{
+	if ! [ -f "${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt" ]; then
+		read_password
+	fi
+}
+
+function start_validator
 {
     echo -ne $(info "Starting the new ${network} ${1} process...")
-    local execution_log_file="$path/Bahamut/${network}/log/${1}/${1}_`date +\"%Y_%m_%d_%T\"`"
-    local config=$(get_config_file $network)
+    local validator_log_file="$path/Bahamut/${network}/log/validator/${1}_`date +\"%Y_%m_%d_%T\"`"
     nohup $path/Bahamut/$1 \
-        --$network \
-        --authrpc.jwtsecret=$path/Bahamut/${network}/datadirs/jwt.hex \
-        --config ${config} > $execution_log_file 2>&1 &
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="${path}/Bahamut/${network}/datadirs/validator/wallet" \
+		--wallet-password-file="${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt" \
+		--datadir="${path}/Bahamut/${network}/datadirs/validator" \
+		--suggested-fee-recipient="${fee_recipient}" \
+		--beacon-rpc-provider="127.0.0.1:${ports[${network}.rpc-port]}" > $validator_log_file 2>&1 &
     echo " Done"
 }
 
 function start_function
 {
     check_network
-    check_config
     check_start_dependency
+	read_fee_recipient
+	check_fee_recipient
+	check_password_file
     for i in $projects; do
         if [ "${project_pids[${network}_${i}_pid]}" ]; then
             error "The process $network ${i} is already started with pid="${project_pids[${network}_${i}_pid]}""
@@ -700,12 +667,6 @@ function stop_function
     done
 }
 
-function init_http_port
-{
-    local http_port=$(grep "HTTPPort" "${1}" | awk -F "=" '{print $2}' | tr -d '[:space:]')
-    echo "$http_port"
-}
-
 function restart_function
 {
     stop_function
@@ -721,177 +682,12 @@ function update_function
     check_update_and_reset_dependency
     rm -rf $download_path
     mkdir -p $path/download
-    download_genesis
     for i in $projects; do
         download_binaries_and_extract $i
     done
-    download_bahamut_script
+    download_bahamut_validator_script
+	install_deposit_cli
     rm -rf $download_path
-}
-
-function check_execution_peers_count
-{
-    local f=$(get_config_file $1)
-    local http_port=$(init_http_port ${f})
-    local peers_count_request=$(curl -s \
-                        -H "Content-Type: application/json" \
-                        -X POST \
-                        --data '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' \
-                        127.0.0.1:${http_port})
-    if [ $? -eq 0 ]; then
-        local peers_count=$(echo "$peers_count_request" | grep -o '"result":"[^"]*"' | cut -d '"' -f 4)
-        local decimal_peers_count=$(printf "%d" "$peers_count")
-        if [ $decimal_peers_count -eq 0 ]; then
-            info "The ${1} ${2} is not syncing. Waiting to connect with peers."
-            exit 0
-        fi
-    else
-        info "The ${1} ${2} peer count request failed."
-        exit 1
-    fi
-}
-
-function get_execution_json
-{
-    local f=$(get_config_file $1)
-    local http_port=$(init_http_port ${f})
-    local execution_json=$(curl -s \
-                        -H "Content-Type: application/json" \
-                        -X POST \
-                        --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
-                        127.0.0.1:${http_port})
-    if [ $? -ne 0 ]; then
-        info "The ${1} ${2} syncing status request failed."
-        exit 1
-    fi
-    echo "$execution_json"
-}
-
-function check_execution_block_number
-{
-    local f=$(get_config_file $1)
-    local http_port=$(init_http_port ${f})
-    local block_number_request=$(curl -s \
-                        -H "Content-Type: application/json" \
-                        -X POST \
-                        --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-                        127.0.0.1:${http_port})
-    if [ $? -eq 0 ]; then
-        local block_number=$(echo "$block_number_request" | grep -o '"result":"[^"]*"' | cut -d '"' -f 4)
-        local decimal_block_number=$(printf "%d" "$block_number")
-        if $3 && [ $decimal_block_number -eq 0 ]; then
-            info "Please wait for block information."
-            exit 0
-        fi
-    else
-        info "The ${1} ${2} syncing block number request failed."
-        exit 1
-    fi
-}
-
-function check_consensus_peers_count
-{
-    local peers_count_request=$(curl -s 127.0.0.1:${ports[${1}.grpc-gateway-port]}/eth/v1/node/peer_count)
-    if [ $? -eq 0 ]; then
-        local peers_count=$(echo "$peers_count_request" | grep -o '"connected":"[^"]*"' | cut -d '"' -f 4)
-        if [ ! -z "$peers_count" ]; then
-            if [ $peers_count -eq 0 ]; then
-                info "The ${1} ${2} is not syncing. Waiting to connect with peers."
-                exit 0
-            fi
-        else
-            info "The ${2} peers not found. Please wait."
-            exit 0
-        fi
-    else
-        info "The ${1} ${2} peer count request failed."
-        exit 1
-    fi
-}
-
-function execution_syncing_status
-{
-    if [ ${project_pids["${1}_${2}_pid"]} ]; then
-        local flag=true
-        check_config
-        check_execution_peers_count $1 $2
-        execution_json=$(get_execution_json $1 $2)
-        r=$(echo "$execution_json" | grep -q '"result":false')
-        if [ $? -eq 1 ]; then
-            flag=false
-        fi
-        check_execution_block_number $1 $2 $flag
-        if echo "$execution_json" | grep -q '"result":false'; then
-            info "The ${1} ${2} full synced."
-        else
-            local highest_block=$(echo "$execution_json" | grep -o '"highestBlock":"[^"]*"' | cut -d '"' -f 4)
-            local current_block=$(echo "$execution_json" | grep -o '"currentBlock":"[^"]*"' | cut -d '"' -f 4)
-            local decimal_highest_block=$(printf "%d" "$highest_block")
-            local decimal_current_block=$(printf "%d" "$current_block")
-            local result=$((decimal_current_block * 100 / decimal_highest_block))
-            info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}" | current block=${decimal_current_block} | highest block=${decimal_highest_block} | syncing=${result}%."
-        fi
-    else
-        info "The ${1} ${2} stopped."
-    fi
-}
-
-function consensus_syncing_status
-{
-    if [ ${project_pids["${1}_${2}_pid"]} ]; then
-        check_consensus_peers_count $1 $2
-        local consensus_json=$(curl -s 127.0.0.1:${ports[${1}.grpc-gateway-port]}/eth/v1/node/syncing)
-        if [ $? -eq 0 ]; then
-            if echo "$consensus_json" | grep -q '"is_syncing":false'; then
-                info "The ${1} ${2} full synced."
-            else
-                local head_slot=$(echo "$consensus_json" | grep -o '"head_slot":"[^"]*"' | cut -d '"' -f 4)
-                local sync_distance=$(echo "$consensus_json" | grep -o '"sync_distance":"[^"]*"' | cut -d '"' -f 4)
-                local block_sum=$((head_slot + sync_distance))
-                if [ ! -z "$block_sum" ] && [ $block_sum -ne 0 ]; then
-                    local result=$((head_slot * 100 / block_sum))
-                    info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}" | syncing=${result}%."
-                else
-                    info "Please wait ${2} block information."
-                fi
-            fi
-        else
-            info "The ${1} ${2} syncing status request failed."
-            exit 1
-        fi
-    else
-        info "The ${1} ${2} stopped."
-    fi
-}
-
-function status_function
-{
-    local c=0
-    local n=""
-    local p=$(pidof $projects)
-    if [ ! -z "$p" ]; then
-        for i in $network_name; do
-            local o=$(ps -fp $p)
-            if echo "$o" | grep -q $i; then
-                ((c=c+1))
-                n=$i
-            fi
-        done
-    fi
-    if [ $c -eq 0 ]; then
-        info "There is no running process."
-        exit 0
-    elif [ $c -eq 1 ]; then
-        for i in $projects; do
-            !(${i}_syncing_status $n $i)
-        done
-    else
-        for i in $network_name; do
-            for j in $projects; do
-                !(${j}_syncing_status $i $j)
-            done
-        done
-    fi
 }
 
 function reset_function
@@ -925,6 +721,73 @@ function reset_function
         info "Deny action with reset."
         exit 0
     fi
+}
+
+function check_validator_keys_dir
+{
+	if [ -z $validator_keys_dir ]; then
+        error "Validator keys dir is mandatory option during import. Type --help or -h to see the correct options."
+        exit 1
+	fi
+	if ! [ -d $validator_keys_dir ]; then
+        error "Validator keys dir must be valid directory. Type --help or -h to see the correct options."
+        exit 1
+	fi
+}
+
+function check_public_keys
+{
+	if [ -z $public_keys ]; then
+        error "Public keys is mandatory option during this operation. Type --help or -h to see the correct options."
+        exit 1
+	fi
+}
+
+function import_function
+{
+	check_validator_keys_dir
+	check_network
+	$path/Bahamut/validator accounts import \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet" \
+		--keys-dir="${validator_keys_dir}"
+}
+
+function list_function
+{
+	check_network
+	$path/Bahamut/validator accounts list \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet"
+}
+
+function exit_function
+{
+	check_network
+	check_public_keys	
+	local o = ""
+	if [[ "all" = ${public_keys} ]]; then
+		o="--exit-all"
+	else
+		o="--public-keys ${public_keys}"
+	fi
+	$path/Bahamut/validator accounts voluntary-exit $o \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet"
+}
+
+function remove_function
+{
+	check_network
+	check_public_keys	
+	$path/Bahamut/validator accounts delete $o \
+		--${network} \
+		--delete-public-keys="${public_keys}" \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet"
 }
 
 ${action}_function
