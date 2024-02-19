@@ -566,7 +566,6 @@ function install_function
         download_binaries_and_extract $i
     done
     install_deposit_cli
-    install_deposit_input
     rm -rf $download_path
     init_systemctl
 }
@@ -574,11 +573,6 @@ function install_function
 function install_deposit_cli
 {
 	download_binaries_and_extract deposit
-}
-
-function install_deposit_input
-{
-       download_binaries_and_extract deposit-input
 }
 
 function read_password
