@@ -3,23 +3,29 @@
 path=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 action=""
 network=""
-version="v2.1.2"
+version="v2.1.3"
 github_version_count=0
 kill_attempt_count=15
 script_name="bahamut"
-network_name="sahara oasis"
+network_name="sahara ocean"
 projects="execution consensus"
 download_path="$path/download"
 min_sync_peers="min-sync-peers 1"
+public_keys=""
+fee_recipient=""
+validator_keys_dir=""
 
 github_binaries="fastexlabs/binaries"
-branch="validator-integration"
 binaries_tags_url="https://api.github.com/repos/$github_binaries/tags"
 binaries_releases_url="https://api.github.com/repos/$github_binaries/releases/tags/${version}"
-genesis_url="https://github.com/${github_binaries}/raw/${branch}/genesis.ssz"
-oasis_config_url="https://github.com/${github_binaries}/raw/${branch}/oasis_config.toml"
-sahara_config_url="https://github.com/${github_binaries}/raw/${branch}/sahara_config.toml"
-bahamut_script_url="https://github.com/${github_binaries}/raw/${branch}/${script_name}"
+genesis_url="https://github.com/${github_binaries}/raw/consensus-integration/genesis.ssz"
+ocean_config_url="https://github.com/${github_binaries}/raw/consensus-integration/ocean_config.toml"
+sahara_config_url="https://github.com/${github_binaries}/raw/consensus-integration/sahara_config.toml"
+bahamut_script_url="https://github.com/${github_binaries}/raw/consensus-integration/${script_name}"
+
+if [ "$network" == "ocean" ]; then
+    projects="execution"
+fi
 
 declare -A ports
 ports=( [sahara.p2p-udp-port]=12000
@@ -27,31 +33,13 @@ ports=( [sahara.p2p-udp-port]=12000
         [sahara.grpc-gateway-port]=3500
         [sahara.rpc-port]=4000
         [sahara.authrpc]=8551
-        [oasis.p2p-udp-port]=12001
-        [oasis.p2p-tcp-port]=13001
-        [oasis.grpc-gateway-port]=3501
-        [oasis.rpc-port]=4001
-        [oasis.authrpc]=8552 )
+        [ocean.p2p-udp-port]=12001
+        [ocean.p2p-tcp-port]=13001
+        [ocean.grpc-gateway-port]=3501
+        [ocean.rpc-port]=4001
+        [ocean.authrpc]=8552 )
 
-declare -A project_pids
-for i in $projects; do
-    pid=$(pidof $i | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1)
-    pid_path=$(pidof $i | xargs pwdx 2>&1 | grep "$path" | cut -d: -f2 | sed 's/^ *//')
-    for j in $pid_path; do
-        if [ "$path" == "$j" ]; then
-            for c in $pid; do
-                for f in $network_name; do
-                    if ps -fp "$c" | grep "$f" > /dev/null 2>&1; then
-                        project_pids["${f}_${i}_pid"]="$c"
-                    fi
-                done
-            done
-        fi
-    done
-done
-
-
-oasis_bootstrap_node="--bootstrap-node="enr:-MK4QDW72KTjU2RcUd3SMUWz9vW9IHMCstEyiErHLnw5i-kIO0FHBYsSaV3xxYI8ynjGnRSutgfCqheaOVJ0dVlhFlKGAYoXK-y5h2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCPDPg2Jc2VjcDI1NmsxoQJINwhsm_QLHl4wLSJ2HptdrGc1DIFsNUrKxaFBADcZB4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QEAoUybSi3BMLP4Pig3-N02Um0ANaBOtFCGVWlvfeQb5GQrcIIFA9eQYUKtnkWHmDNf5Avqt0TNoTO-GHfZv4V-GAYoXN1lzh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYh7mJc2VjcDI1NmsxoQMv3ezcnOCiGBm0PSnt7sgPVNDVZ1NAC1igDKWRlcBBe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QPbEhAr_q9JW6U76VgZVdKyLhaVo82IDyuuTTQdHNzucPkdyWhVA15RSuH-SiPmUXjORtPS2f7msNbB-ynO_KzeGAYoXc4IFh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYycmJc2VjcDI1NmsxoQJ4dFs_DPW7THGr7KfmuvdNUXLoFjZ1YfaPFUl89H8b0YhzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A""
+ocean_bootstrap_node="--bootstrap-node="enr:-MK4QDW72KTjU2RcUd3SMUWz9vW9IHMCstEyiErHLnw5i-kIO0FHBYsSaV3xxYI8ynjGnRSutgfCqheaOVJ0dVlhFlKGAYoXK-y5h2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCPDPg2Jc2VjcDI1NmsxoQJINwhsm_QLHl4wLSJ2HptdrGc1DIFsNUrKxaFBADcZB4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QEAoUybSi3BMLP4Pig3-N02Um0ANaBOtFCGVWlvfeQb5GQrcIIFA9eQYUKtnkWHmDNf5Avqt0TNoTO-GHfZv4V-GAYoXN1lzh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYh7mJc2VjcDI1NmsxoQMv3ezcnOCiGBm0PSnt7sgPVNDVZ1NAC1igDKWRlcBBe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A" --bootstrap-node="enr:-MK4QPbEhAr_q9JW6U76VgZVdKyLhaVo82IDyuuTTQdHNzucPkdyWhVA15RSuH-SiPmUXjORtPS2f7msNbB-ynO_KzeGAYoXc4IFh2F0dG5ldHOIAAAAAAAAAACEZXRoMpDMilfyAwAoWv__________gmlkgnY0gmlwhCJYycmJc2VjcDI1NmsxoQJ4dFs_DPW7THGr7KfmuvdNUXLoFjZ1YfaPFUl89H8b0YhzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A""
 
 function red()
 {
@@ -128,9 +116,10 @@ function print_help
     #DESCRIPTION
     echo -e "\n"
     echo "DESCRIPTION:"
-    echo -e "\tThis script automatically sets up and runs Caravan - the Execution and Beacon-Chain -the Consensus layers of Fastex chain (Bahamut) blockchain."
+    echo -e "\tThis script automatically sets up and runs Caravan - the Execution and Beacon-Chain -the Consensus layers, and Validator client of Fastex chain (Bahamut) blockchain."
     echo -e "\tThe execution layer client that operates Fastex Chain is written in Go. Running the execution layer helps the user setup and maintain a Caravan node."
-    echo -e "\tThe consensus layer is an implementation of the proof-of-stake-and-activity consensus specification." 
+    echo -e "\tThe consensus layer is an implementation of the proof-of-stake-and-activity consensus specification written in Go."
+    echo -e "\tThe validator client that performs block creation and validation operations written in Go."
     #Usage
     echo -e "\n"
     echo "USAGE:"
@@ -138,43 +127,72 @@ function print_help
     #Mandatory options
     echo -e "\n"
     echo "MANDATORY OPTIONS:"
-    echo -e "\tinstall|start|stop|restart|status|update|reset - Main action(s) to be performed."
+    echo -e "\tinstall|start|stop|restart|status|update|reset|validator - Main action(s) to be performed."
     echo -e "\tstart - Starts the Execution and Consensus Layer nodes"
     echo -e "\tstop - Stops the Execution and Consensus Layer nodes."
     echo -e "\tstatus - Returns the current status of Execution and Consensus Layer nodes."
     echo -e "\tinstall - Installs the Execution and Consensus Layer dependencies needed for the start."
     echo -e "\tupdate - Updates Execution and Consensus Layer binaries and native scripts."
     echo -e "\treset - Resets the Execution and Consensus Layer databases."
+    echo -e "\n"
+    echo -e "\tvalidator - Validator option which has its actions - install|start|stop|restart|update|import|list|exit|remove"
+    echo -e "\t\tstart - Starts the Validator client."
+    echo -e "\t\tstop - Stops the Validator client."
+    echo -e "\t\tlist - Check the list of imported validators."
+    echo -e "\t\tinstall - Install Bahamut dependencies needed for validator client the start."
+    echo -e "\t\texit - Execute voluntary exit of your validators."
+    echo -e "\t\timport - Imports validator keys."
+    echo -e "\t\tremove - Remove imported validators from Bahamut Validator client."
     #Arguments
     echo -e "\n"
     echo "ARGUMENTS:"
     echo -e "\t--help, -h - Show help."
     echo -e "\t--version, -v - Manually set the binaries version. Default version is the latest version."
-    echo -e "\t-n, --network - Must connect to the network. Network can be Sahara (mainnet) or Oasis (testnet)."
+    echo -e "\t-n, --network - Must connect to the network. Network can be Sahara (mainnet) or Ocean (testnet)."
     #Examples
     echo -e "\n"
     echo -e "EXAMPLES:"
-    echo -e "\t- ./bahamut start -n=oasis"
-    echo -e "\t\t Start oasis node. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut install."
+    echo -e "\t- ./bahamut start -n=ocean"
+    echo -e "\t\t Starts ocean node. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut install."
     echo -e "\n"
     echo -e "\t- ./bahamut update --version v1.0.0"
     echo -e "\t\t Update bahamut script with binaries v1.0.0 version. If there is a running process, terminate it with Stop action. Example ./bahamut stop."
     echo -e "\n"
     echo -e "\t- ./bahamut stop"
-    echo -e "\t\t If Sahara and Oasis are running at the same time, specify which network to swich off. Example ./bahamut stop --network oasis."
+    echo -e "\t\t If Sahara and Ocean are running at the same time, specify which network to swich off. Example ./bahamut stop --network ocean."
     echo -e "\n"
     echo -e "\t- ./bahamut restart"
-    echo -e "\t\t If Sahara and Oasis are running at the same time, specify which network to restart. Example ./bahamut restart --network oasis."
+    echo -e "\t\t If Sahara and Ocean are running at the same time, specify which network to restart. Example ./bahamut restart --network ocean."
     echo -e "\n"
     echo -e "\t- ./bahamut reset"
-    echo -e "\t\t If neither Sahara nor Oasis network is specified, both databases will be reset. In order to reset one of them, provide the network name. Example ./bahamut reset -n=oasis."
+    echo -e "\t\t If neither Sahara nor Ocean network is specified, both databases will be reset. In order to reset one of them, provide the network name. Example ./bahamut reset -n=ocean."
+    echo -e "\n"
+    echo -e "VALIDATOR EXAMPLES:"
+    echo -e "\t- ./bahamut validator start -n=ocean"
+    echo -e "\t\t To start the Bahamut Validator client. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut validator install."
+    echo -e "\n"
+    echo -e "\t- ./bahamut validator install"
+    echo -e "\t\t To install Bahamut dependencies needed for the start."
+    echo -e "\n"
+    echo -e "\t- ./bahamut validator import --validator-keys-dir=... --network=sahara"
+    echo -e "\t\t Once your validator keys are generated, they can be imported, to do it."
+    echo -e "\n"
+    echo -e "\t- ./bahamut validator list --network=sahara"
+    echo -e "\t\t To check the list of imported validators."
+    echo -e "\n"
+    echo -e "\t- ./bahamut validator exit --public-keys=... --network=ocean"
+    echo -e "\t\t To execute voluntary exit of your validators."
+    echo -e "\n"
+    echo -e "\t- ./bahamut validator remove --public-keys=... --network=ocean"
+    echo -e "\t\t To remove imported validators from Bahamut Validator client."
+    echo -e "\n"
     #Systemctl commands
     echo -e "\n"
     echo -e "SYSTEMCTL COMMANDS EXAMPLES:"
-    echo -e "\tsudo systemctl start bahamut_oasis_execution.service - Start the Execution Layer node."
+    echo -e "\tsudo systemctl start bahamut_ocean_execution.service - Start the Execution Layer node."
     echo -e "\tsudo systemctl stop bahamut_sahara_consensus.service - Stop the Consensus Layer node."
     echo -e "\tsudo systemctl restart bahamut_sahara_consensus.service - Restart the Consensus Layer node."
-    echo -e "\tsudo systemctl status bahamut_oasis_execution.service - Show the Execution Layer node status."
+    echo -e "\tsudo systemctl status bahamut_ocean_execution.service - Show the Execution Layer node status."
     echo -e "\n"
 }
 
@@ -184,8 +202,8 @@ function check_network()
         error "Network is mandatory option during start. Type --help or -h to see the correct options."
         exit 1
     fi
-    if [  "mainnet" != "$network" ] && [ "oasis" != "$network" ] && [ "sahara" != "$network" ]; then
-        error "Network name must be \"mainnet\",\"oasis\",\"sahara\"."
+    if [  "mainnet" != "$network" ] && [ "ocean" != "$network" ] && [ "sahara" != "$network" ]; then
+        error "Network name must be \"mainnet\",\"ocean\",\"sahara\"."
         exit 1
     fi
 }
@@ -193,7 +211,7 @@ function check_network()
 function check_action
 {
     if ! [ -z "$action" ]; then
-        error "Please specify only one of start|stop|status|restart|install|update options!!!"
+        error "Please specify only one of start|stop|status|restart|install|update|validator options!!!"
         exit 1
     fi
 }
@@ -237,11 +255,55 @@ while [[ $# -gt 0 ]]; do
             action=$1
             shift
             ;;
+        --validator-keys-dir|--validator-keys-dir=*)
+            validator_keys_dir=$(get_option $1 $2)
+            shift $(get_shift $1)
+			;;
+        --fee-recipient|--fee-recipient=*)
+            fee_recipient=$(get_option $1 $2)
+            shift $(get_shift $1)
+			;;
+        --public-keys|--public-keys=*)
+            public_keys=$(get_option $1 $2)
+            shift $(get_shift $1)
+			;;
+        validator)
+        shift
+        case $1 in
+            start|stop|list|install|exit|import|remove)
+                projects="validator"
+                action=validator_$1
+                shift
+                ;;
+            *)
+                error "Main action \"start\", \"stop\", \"list\", \"restart\", \"install\", \"exit\", \"import\", \"remove\" is missing!!!"
+                info "For more details please use -h|--help option."
+                exit 1
+                ;;
+        esac
+        ;;
         *)
             error "Unknown option $1. Type --help or -h to see the correct options."
             exit 1
             ;;
     esac
+done
+
+declare -A project_pids
+for i in $projects; do
+    pid=$(pidof $i | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1)
+    pid_path=$(pidof $i | xargs pwdx 2>&1 | grep "$path" | cut -d: -f2 | sed 's/^ *//')
+    for j in $pid_path; do
+        if [ "$path" == "$j" ]; then
+            for c in $pid; do
+                for f in $network_name; do
+                    if ps -fp "$c" | grep "$f" > /dev/null 2>&1; then
+                        project_pids["${f}_${i}_pid"]="$c"
+                    fi
+                done
+            done
+        fi
+    done
 done
 
 if [ -z "$action" ]; then
@@ -252,7 +314,7 @@ fi
 
 ##############################################
 #This is done for users who ran the script on the mainnet
-if [ -z "${project_pids["oasis_execution_pid"]}" ] && [ -z "${project_pids["sahara_execution_pid"]}" ] && [ -d "$path/Bahamut/mainnet" ]; then
+if [ -z "${project_pids["ocean_execution_pid"]}" ] && [ -z "${project_pids["sahara_execution_pid"]}" ] && [ -d "$path/Bahamut/mainnet" ]; then
     rm -rf $path/Bahamut/sahara
     mv -f $path/Bahamut/mainnet $path/Bahamut/sahara
 fi
@@ -323,9 +385,11 @@ function check_start_dependency
             exit 1
         fi
     done
-    if [ ! -f "$path/Bahamut/oasis/genesis.ssz" ]; then
+    if [ "validator" != "$projects" ]; then
+        if [ ! -f "$path/Bahamut/ocean/genesis.ssz" ]; then
         error "The genesis.ssz not found. Please do the following first ./bahamut install"
         exit 1
+        fi
     fi
 }
 
@@ -350,7 +414,7 @@ function check_stop_dependency_and_init
         elif [ $c -eq 1 ]; then
             network=$n
         else
-            error "Sahara and Oasis are currently working. To restart, please indicate which network you want to ${action} example (./bahamut ${action} -n=oasis)."
+            error "Sahara and Ocean are currently working. To restart, please indicate which network you want to ${action} example (./bahamut ${action} -n=ocean)."
             exit 1
         fi
     fi
@@ -382,6 +446,14 @@ function check_update_and_reset_dependency
     done
 }
 
+function check_public_keys
+{
+	if [ -z $public_keys ]; then
+        error "Public keys is mandatory option during this operation. Type --help or -h to see the correct options."
+        exit 1
+	fi
+}
+
 function check_versions_flag
 {
     if [ $github_version_count -ge 2 ]; then
@@ -402,7 +474,7 @@ function check_versions_flag
 
 function read_confirmation_and_stop
 {
-    local c=$(read_confirmation "$(conf "Do you want to ${action} running ${1} ${2} process? Enter:")" "Y/n")
+    local c=$(read_confirmation "$(conf "Do you want to stop running ${1} ${2} process? Enter:")" "Y/n")
     if [ "Y" == "$c" ]; then
         kill_process $1 $2 $3 "-15"
         `ps -p $3` > /dev/null 2>&1
@@ -414,7 +486,7 @@ function read_confirmation_and_stop
 
 function download_binaries_and_extract
 {
-    if [ "install" == "$action" ] && [ -x "$path/Bahamut/$1" ]; then
+    if [[ "install" == "$action" && -x "$path/Bahamut/$1" ]] || [[ "validator_install" == "$action" && -x "$path/Bahamut/$1" ]]; then
         info "The ${1} binary is exist."
     else
         info "Starting the process of downloading ${1} binaries file. Please wait."
@@ -491,7 +563,7 @@ function download_configurations
 
 function download_genesis
 {
-    if [ "install" == "$action" ] && [ -f $path/Bahamut/oasis/genesis.ssz ]; then
+    if [ "install" == "$action" ] && [ -f $path/Bahamut/ocean/genesis.ssz ]; then
         info "The genesis.ssz file is exists."
     else
         info "Starting the process of downloading genesis.ssz file..."
@@ -500,8 +572,82 @@ function download_genesis
             error "Failed to download genesis.ssz file."
             exit 1
         fi
-        mv -f "$download_path/genesis.ssz" $path/Bahamut/oasis/ > /dev/null 2>&1
+        mv -f "$download_path/genesis.ssz" $path/Bahamut/ocean/ > /dev/null 2>&1
     fi
+}
+
+function read_fee_recipient
+{
+	if [ -z "$fee_recipient" ]; then
+		while [ true ]; do
+			read -p "Please enter your fee recipient address: " v
+			echo $v
+			if ! [[ 42 -eq ${#v} ]]; then
+				error "Fee recipient must be 20 bytes length address with \'0x\' prefix"
+				continue
+			fi
+			if ! [[ "0x" -eq ${v:0:2} ]]; then
+				error "Fee recipient must be 20 bytes length address with \'0x\' prefix"
+				continue
+			fi
+			fee_recipient=$v
+			break
+		done
+	fi
+}
+
+function check_fee_recipient
+{
+	if [ -z "$fee_recipient" ]; then
+        error "Fee recipient is mandatory option during start. Type --help or -h to see the correct options."
+        exit 1
+	fi
+	if ! [ 42 -eq ${#fee_recipient} ]; then
+        error "Fee recipient must be 20 bytes length address with `0x` prefix"
+        exit 1
+	fi
+	if ! [ "0x" = ${fee_recipient:0:2} ]; then
+        error "Fee recipient must be 20 bytes length address with `0x` prefix"
+        exit 1
+	fi
+}
+
+function read_password
+{
+    local password=""
+    local char
+    echo -n "Enter your password: "
+    while true; do
+        while IFS= read -rs -n 1 char; do
+            if [[ $char == $'\0' ]]; then
+                break
+            fi
+            if [[ $char == $'\177' ]]; then
+                if [ -n "$password" ]; then
+                    password="${password%?}"
+                    echo -ne "\b \b"
+                fi
+            else
+                password+="$char"
+                echo -n "*"
+            fi
+        done
+        if [ -n "$password" ]; then
+            echo
+            break
+        else
+            echo -e "\nPassword cannot be empty. Please try again."
+            echo -n "Enter your password: "
+        fi
+    done
+    echo "$password" > "${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt"
+}
+
+function check_password_file
+{
+	if ! [ -f "${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt" ]; then
+		read_password
+	fi
 }
 
 function get_systemctl_files_path
@@ -517,10 +663,15 @@ function get_systemctl_execution_start
 function get_systemctl_consensus_start
 {
     local o=""
-    if [ "oasis" == "$network" ]; then
-        o="--genesis-state $path/Bahamut/oasis/genesis.ssz ${oasis_bootstrap_node}"
+    if [ "ocean" == "$network" ]; then
+        o="--genesis-state $path/Bahamut/ocean/genesis.ssz ${ocean_bootstrap_node}"
     fi
     echo "ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use --p2p-static-id --${min_sync_peers} --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex ${o}"
+}
+
+function get_systemctl_validator_start
+{
+    echo "ExecStart=${path}/Bahamut/${2} --${1} --accept-terms-of-use --wallet-dir="${path}/Bahamut/${1}/datadirs/validator/wallet" --wallet-password-file="${path}/Bahamut/${1}/datadirs/validator/wallet_password.txt" --datadir="${path}/Bahamut/${1}/datadirs/validator" --suggested-fee-recipient="${fee_recipient}" --beacon-rpc-provider="127.0.0.1:${ports[${1}.rpc-port]}""
 }
 
 function generate_systemctl_files
@@ -570,7 +721,7 @@ function init_directory
     done
     if [ "true" == "$f" ]; then
         echo -ne $(info "Starting the create jwt.hex files..")
-        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/oasis/datadirs/jwt.hex
+        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/ocean/datadirs/jwt.hex
         openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/sahara/datadirs/jwt.hex
         echo " Done"
     else
@@ -585,6 +736,9 @@ function init_systemctl
     c=$(read_confirmation "$(conf "Would you like to run the script with systemctl? Enter:")" "Y/n")
     if [ "Y" == "$c" ]; then
         info "This script requires root privileges."
+        if [ "validator" == "$projects" ]; then
+            read_fee_recipient
+        fi
         for i in $projects; do
             for j in $network_name; do
                 service_file=${j}_${i}_system_file
@@ -597,11 +751,22 @@ function init_systemctl
                 fi
             done
         done
-        info "The systemctl files are enabled."
-        info "Systemctl commands examples - sudo systemctl start/stop/restart/status bahamut_oasis_execution.service."
+        info "The systemctl files are enables."
+        info "Systemctl commands examples - sudo systemctl start/stop/restart/status bahamut_ocean_execution.service."
     else
-        info "Deny operation with systemctl."
+        info "Deny operation with systemctel."
     fi
+}
+
+function validator_install_function
+{
+    check_install_dependency
+    check_versions_flag
+    init_directory
+    download_binaries_and_extract $projects
+    download_binaries_and_extract deposit
+    rm -rf $download_path
+    init_systemctl
 }
 
 function install_function
@@ -620,11 +785,34 @@ function install_function
     init_systemctl
 }
 
+function start_validator
+{
+    echo -ne $(info "Starting the new ${network} ${i} process...")
+    local validator_log_file="$path/Bahamut/${network}/log/validator/${i}_`date +\"%Y_%m_%d_%T\"`"
+    nohup $path/Bahamut/$i \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="${path}/Bahamut/${network}/datadirs/validator/wallet" \
+		--wallet-password-file="${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt" \
+		--datadir="${path}/Bahamut/${network}/datadirs/validator" \
+		--suggested-fee-recipient="${fee_recipient}" \
+		--beacon-rpc-provider="127.0.0.1:${ports[${network}.rpc-port]}" > $validator_log_file 2>&1 &
+    echo " Done"
+    while true; do
+        curl localhost:8081/healthz > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            rm ${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt
+            break
+        fi
+        sleep 2
+    done
+}
+
 function start_consensus
 {
     local o=""
-    if [ "oasis" == "$network" ]; then
-        o="--genesis-state $path/Bahamut/oasis/genesis.ssz ${oasis_bootstrap_node}"
+    if [ "ocean" == "$network" ]; then
+        o="--genesis-state $path/Bahamut/ocean/genesis.ssz ${ocean_bootstrap_node}"
     fi
     echo -ne $(info "Starting the new ${network} ${1} process...")
     local beacon_chain_log_file="$path/Bahamut/${network}/log/consensus/${1}_`date +\"%Y_%m_%d_%T\"`"
@@ -653,6 +841,23 @@ function start_execution
         --authrpc.jwtsecret=$path/Bahamut/${network}/datadirs/jwt.hex \
         --config ${config} > $execution_log_file 2>&1 &
     echo " Done"
+}
+
+function validator_start_function
+{
+    check_network
+    check_start_dependency
+    read_fee_recipient
+    check_fee_recipient
+    check_password_file
+    for i in $projects; do
+        if [ "${project_pids[${network}_${i}_pid]}" ]; then
+            error "The process $network ${i} is already started with pid="${project_pids[${network}_${i}_pid]}""
+            continue
+        else
+            start_${i} ${i}
+        fi
+    done
 }
 
 function start_function
@@ -700,6 +905,18 @@ function stop_function
     done
 }
 
+function validator_stop_function
+{
+    check_stop_dependency_and_init
+    for i in $projects; do
+        if [ "${project_pids[${network}_${i}_pid]}" ]; then
+            read_confirmation_and_stop $network $i "${project_pids[${network}_${i}_pid]}"
+        else
+            info "There is no ${network} ${i} running process."
+        fi
+    done
+}
+
 function init_http_port
 {
     local http_port=$(grep "HTTPPort" "${1}" | awk -F "=" '{print $2}' | tr -d '[:space:]')
@@ -727,6 +944,29 @@ function update_function
     done
     download_bahamut_script
     rm -rf $download_path
+}
+
+function check_validator_keys_dir
+{
+	if [ -z $validator_keys_dir ]; then
+        error "Validator keys dir is mandatory option during import. Type --help or -h to see the correct options."
+        exit 1
+	fi
+	if ! [ -d $validator_keys_dir ]; then
+        error "Validator keys dir must be valid directory. Type --help or -h to see the correct options."
+        exit 1
+	fi
+}
+
+function validator_import_function
+{
+	check_validator_keys_dir
+	check_network
+	$path/Bahamut/$projects accounts import \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet" \
+		--keys-dir="${validator_keys_dir}"
 }
 
 function check_execution_peers_count
@@ -780,7 +1020,7 @@ function check_execution_block_number
         local block_number=$(echo "$block_number_request" | grep -o '"result":"[^"]*"' | cut -d '"' -f 4)
         local decimal_block_number=$(printf "%d" "$block_number")
         if $3 && [ $decimal_block_number -eq 0 ]; then
-            info "Please wait for block information."
+            info "Please wait for blok information."
             exit 0
         fi
     else
@@ -852,7 +1092,7 @@ function consensus_syncing_status
                     local result=$((head_slot * 100 / block_sum))
                     info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}" | syncing=${result}%."
                 else
-                    info "Please wait ${2} block information."
+                    info "Please wait ${2} blok information."
                 fi
             fi
         else
@@ -894,13 +1134,49 @@ function status_function
     fi
 }
 
+function validator_exit_function
+{
+	check_network
+	check_public_keys
+	local o = ""
+	if [[ "all" = ${public_keys} ]]; then
+		o="--exit-all"
+	else
+		o="--public-keys ${public_keys}"
+	fi
+	$path/Bahamut/$projects accounts voluntary-exit $o \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet"
+}
+
+function validator_list_function
+{
+	check_network
+	$path/Bahamut/$projects accounts list \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet"
+}
+
+function validator_remove_function
+{
+	check_network
+	check_public_keys
+	$path/Bahamut/$projects accounts delete \
+		--${network} \
+		--delete-public-keys="${public_keys}" \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet"
+}
+
 function reset_function
 {
     local p=""
     check_update_and_reset_dependency
     if [ -z "$network" ]; then
-        p="Network not specified. Do you want to drop oasis and sahara entire contents of databases? Enter:"
-        network="sahara oasis"
+        p="Network not specified. Do you want to drop ocean and sahara entire contents of databases? Enter:"
+        network="sahara ocean"
     else
         p="Do you want to drop ${network} entire contents of database? Enter:"
     fi
