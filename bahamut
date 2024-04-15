@@ -18,14 +18,10 @@ validator_keys_dir=""
 github_binaries="fastexlabs/binaries"
 binaries_tags_url="https://api.github.com/repos/$github_binaries/tags"
 binaries_releases_url="https://api.github.com/repos/$github_binaries/releases/tags/${version}"
-genesis_url="https://github.com/${github_binaries}/raw/consensus-integration/genesis.ssz"
-ocean_config_url="https://github.com/${github_binaries}/raw/consensus-integration/ocean_config.toml"
-sahara_config_url="https://github.com/${github_binaries}/raw/consensus-integration/sahara_config.toml"
-bahamut_script_url="https://github.com/${github_binaries}/raw/consensus-integration/${script_name}"
-
-if [ "$network" == "ocean" ]; then
-    projects="execution"
-fi
+genesis_url="https://github.com/${github_binaries}/raw/validator-integration/genesis.ssz"
+ocean_config_url="https://github.com/${github_binaries}/raw/validator-integration/ocean_config.toml"
+sahara_config_url="https://github.com/${github_binaries}/raw/validator-integration/sahara_config.toml"
+bahamut_script_url="https://github.com/${github_binaries}/raw/validator-integration/${script_name}"
 
 declare -A ports
 ports=( [sahara.p2p-udp-port]=12000
@@ -288,6 +284,10 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [ "$network" == "ocean" ]; then
+    projects="execution"
+fi
 
 declare -A project_pids
 for i in $projects; do
@@ -610,6 +610,14 @@ function check_fee_recipient
         error "Fee recipient must be 20 bytes length address with `0x` prefix"
         exit 1
 	fi
+}
+
+function check_validator_is_active
+{
+    if [ ! "${project_pids[${network}_${projects}_pid]}" ]; then
+        error "The validator is not running. Please do the following first ./bahamut validator start"
+        exit 1
+    fi
 }
 
 function read_password
@@ -960,6 +968,7 @@ function check_validator_keys_dir
 
 function validator_import_function
 {
+    check_validator_is_active
 	check_validator_keys_dir
 	check_network
 	$path/Bahamut/$projects accounts import \
@@ -1136,6 +1145,7 @@ function status_function
 
 function validator_exit_function
 {
+    check_validator_is_active
 	check_network
 	check_public_keys
 	local o = ""
@@ -1152,6 +1162,7 @@ function validator_exit_function
 
 function validator_list_function
 {
+    check_validator_is_active
 	check_network
 	$path/Bahamut/$projects accounts list \
 		--${network} \
@@ -1161,6 +1172,7 @@ function validator_list_function
 
 function validator_remove_function
 {
+    check_validator_is_active
 	check_network
 	check_public_keys
 	$path/Bahamut/$projects accounts delete \
