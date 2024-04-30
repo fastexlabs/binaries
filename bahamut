@@ -3,7 +3,7 @@
 path=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 action=""
 network=""
-version="v2.1.3"
+version="v2.1.4"
 github_version_count=0
 kill_attempt_count=15
 script_name="bahamut"
@@ -284,10 +284,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-if [ "$network" == "ocean" ]; then
-    projects="execution"
-fi
 
 declare -A project_pids
 for i in $projects; do
