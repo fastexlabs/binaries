@@ -3,11 +3,11 @@
 path=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 action=""
 network=""
-version="v2.1.6"
+version="v2.1.7"
 github_version_count=0
 kill_attempt_count=15
 script_name="bahamut"
-network_name="sahara ocean"
+network_name="sahara horizon"
 projects="execution consensus"
 download_path="$path/download"
 min_sync_peers="min-sync-peers 1"
@@ -18,8 +18,7 @@ validator_keys_dir=""
 github_binaries="fastexlabs/binaries"
 binaries_tags_url="https://api.github.com/repos/$github_binaries/tags"
 binaries_releases_url="https://api.github.com/repos/$github_binaries/releases/tags/${version}"
-genesis_url="https://github.com/${github_binaries}/raw/validator-integration/genesis.ssz"
-ocean_config_url="https://github.com/${github_binaries}/raw/validator-integration/ocean_config.toml"
+horizon_config_url="https://github.com/${github_binaries}/raw/validator-integration/horizon_config.toml"
 sahara_config_url="https://github.com/${github_binaries}/raw/validator-integration/sahara_config.toml"
 bahamut_script_url="https://github.com/${github_binaries}/raw/validator-integration/${script_name}"
 
@@ -29,13 +28,11 @@ ports=( [sahara.p2p-udp-port]=12000
         [sahara.grpc-gateway-port]=3500
         [sahara.rpc-port]=4000
         [sahara.authrpc]=8551
-        [ocean.p2p-udp-port]=12001
-        [ocean.p2p-tcp-port]=13001
-        [ocean.grpc-gateway-port]=3501
-        [ocean.rpc-port]=4001
-        [ocean.authrpc]=8552 )
-
-ocean_bootstrap_node="--bootstrap-node=enr:-MK4QARPQZ-yFLQUVyygkbBtk-aJC7ohgIWn0Mo1j4tO1pz1a8y-3imFfpoxQqbWBp2mZU8Clv6aZYvpGFesn3EAT_mGAY8qJh6Bh2F0dG5ldHOIAAAAAAAAAACEZXRoMpBGUPNLBAAoOv__________gmlkgnY0gmlwhCKMzwKJc2VjcDI1NmsxoQJebC3ha7lpBWhQuCENG-5oksf1wwmpu8m7D8Be4VGqQYhzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A --bootstrap-node=enr:-MK4QIcPySZNea53e-0gx51Fgp7uo4sQ2tXaoIBdruGZcUqsdbrsqOH4ibA18r39kJljPE6k-Dn2LAfEoJlj4D_cf8mGAY8qJKeVh2F0dG5ldHOIAAAAAAAAAACEZXRoMpBGUPNLBAAoOv__________gmlkgnY0gmlwhCO7RCGJc2VjcDI1NmsxoQMnkSDNngSNs-ZTlNIx1ezc1RLWU49KyyQXzN5tQL7DxYhzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A"
+        [horizon.p2p-udp-port]=12001
+        [horizon.p2p-tcp-port]=13001
+        [horizon.grpc-gateway-port]=3501
+        [horizon.rpc-port]=4001
+        [horizon.authrpc]=8552 )
 
 function red()
 {
@@ -144,27 +141,27 @@ function print_help
     echo "ARGUMENTS:"
     echo -e "\t--help, -h - Show help."
     echo -e "\t--version, -v - Manually set the binaries version. Default version is the latest version."
-    echo -e "\t-n, --network - Must connect to the network. Network can be Sahara (mainnet) or Ocean (testnet)."
+    echo -e "\t-n, --network - Must connect to the network. Network can be Sahara (mainnet) or Horizon (testnet)."
     #Examples
     echo -e "\n"
     echo -e "EXAMPLES:"
-    echo -e "\t- ./bahamut start -n=ocean"
-    echo -e "\t\t Starts ocean node. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut install."
+    echo -e "\t- ./bahamut start -n=horizon"
+    echo -e "\t\t Starts horizon node. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut install."
     echo -e "\n"
     echo -e "\t- ./bahamut update --version v1.0.0"
     echo -e "\t\t Update bahamut script with binaries v1.0.0 version. If there is a running process, terminate it with Stop action. Example ./bahamut stop."
     echo -e "\n"
     echo -e "\t- ./bahamut stop"
-    echo -e "\t\t If Sahara and Ocean are running at the same time, specify which network to swich off. Example ./bahamut stop --network ocean."
+    echo -e "\t\t If Sahara and Horizon are running at the same time, specify which network to swich off. Example ./bahamut stop --network horizon."
     echo -e "\n"
     echo -e "\t- ./bahamut restart"
-    echo -e "\t\t If Sahara and Ocean are running at the same time, specify which network to restart. Example ./bahamut restart --network ocean."
+    echo -e "\t\t If Sahara and Horizon are running at the same time, specify which network to restart. Example ./bahamut restart --network horizon."
     echo -e "\n"
     echo -e "\t- ./bahamut reset"
-    echo -e "\t\t If neither Sahara nor Ocean network is specified, both databases will be reset. In order to reset one of them, provide the network name. Example ./bahamut reset -n=ocean."
+    echo -e "\t\t If neither Sahara nor Horizon network is specified, both databases will be reset. In order to reset one of them, provide the network name. Example ./bahamut reset -n=horizon."
     echo -e "\n"
     echo -e "VALIDATOR EXAMPLES:"
-    echo -e "\t- ./bahamut validator start -n=ocean"
+    echo -e "\t- ./bahamut validator start -n=horizon"
     echo -e "\t\t To start the Bahamut Validator client. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut validator install."
     echo -e "\n"
     echo -e "\t- ./bahamut validator install"
@@ -176,19 +173,19 @@ function print_help
     echo -e "\t- ./bahamut validator list --network=sahara"
     echo -e "\t\t To check the list of imported validators."
     echo -e "\n"
-    echo -e "\t- ./bahamut validator exit --public-keys=... --network=ocean"
+    echo -e "\t- ./bahamut validator exit --public-keys=... --network=horizon"
     echo -e "\t\t To execute voluntary exit of your validators."
     echo -e "\n"
-    echo -e "\t- ./bahamut validator remove --public-keys=... --network=ocean"
+    echo -e "\t- ./bahamut validator remove --public-keys=... --network=horizon"
     echo -e "\t\t To remove imported validators from Bahamut Validator client."
     echo -e "\n"
     #Systemctl commands
     echo -e "\n"
     echo -e "SYSTEMCTL COMMANDS EXAMPLES:"
-    echo -e "\tsudo systemctl start bahamut_ocean_execution.service - Start the Execution Layer node."
+    echo -e "\tsudo systemctl start bahamut_horizon_execution.service - Start the Execution Layer node."
     echo -e "\tsudo systemctl stop bahamut_sahara_consensus.service - Stop the Consensus Layer node."
     echo -e "\tsudo systemctl restart bahamut_sahara_consensus.service - Restart the Consensus Layer node."
-    echo -e "\tsudo systemctl status bahamut_ocean_execution.service - Show the Execution Layer node status."
+    echo -e "\tsudo systemctl status bahamut_horizon_execution.service - Show the Execution Layer node status."
     echo -e "\n"
 }
 
@@ -198,8 +195,8 @@ function check_network()
         error "Network is mandatory option during start. Type --help or -h to see the correct options."
         exit 1
     fi
-    if [  "mainnet" != "$network" ] && [ "ocean" != "$network" ] && [ "sahara" != "$network" ]; then
-        error "Network name must be \"mainnet\",\"ocean\",\"sahara\"."
+    if [  "mainnet" != "$network" ] && [ "horizon" != "$network" ] && [ "sahara" != "$network" ]; then
+        error "Network name must be \"mainnet\",\"horizon\",\"sahara\"."
         exit 1
     fi
 }
@@ -310,7 +307,7 @@ fi
 
 ##############################################
 #This is done for users who ran the script on the mainnet
-if [ -z "${project_pids["ocean_execution_pid"]}" ] && [ -z "${project_pids["sahara_execution_pid"]}" ] && [ -d "$path/Bahamut/mainnet" ]; then
+if [ -z "${project_pids["horizon_execution_pid"]}" ] && [ -z "${project_pids["sahara_execution_pid"]}" ] && [ -d "$path/Bahamut/mainnet" ]; then
     rm -rf $path/Bahamut/sahara
     mv -f $path/Bahamut/mainnet $path/Bahamut/sahara
 fi
@@ -381,12 +378,6 @@ function check_start_dependency
             exit 1
         fi
     done
-    if [ "validator" != "$projects" ]; then
-        if [ ! -f "$path/Bahamut/ocean/genesis.ssz" ]; then
-        error "The genesis.ssz not found. Please do the following first ./bahamut install"
-        exit 1
-        fi
-    fi
 }
 
 function check_stop_dependency_and_init
@@ -410,7 +401,7 @@ function check_stop_dependency_and_init
         elif [ $c -eq 1 ]; then
             network=$n
         else
-            error "Sahara and Ocean are currently working. To restart, please indicate which network you want to ${action} example (./bahamut ${action} -n=ocean)."
+            error "Sahara and Horizon are currently working. To restart, please indicate which network you want to ${action} example (./bahamut ${action} -n=horizon)."
             exit 1
         fi
     fi
@@ -557,21 +548,6 @@ function download_configurations
     fi
 }
 
-function download_genesis
-{
-    if [ "install" == "$action" ] && [ -f $path/Bahamut/ocean/genesis.ssz ]; then
-        info "The genesis.ssz file is exists."
-    else
-        info "Starting the process of downloading genesis.ssz file..."
-        wget -P $download_path/ $genesis_url -q --show-progress
-        if ! [ $? -eq 0 ]; then
-            error "Failed to download genesis.ssz file."
-            exit 1
-        fi
-        mv -f "$download_path/genesis.ssz" $path/Bahamut/ocean/ > /dev/null 2>&1
-    fi
-}
-
 function read_fee_recipient
 {
 	if [ -z "$fee_recipient" ]; then
@@ -667,8 +643,8 @@ function get_systemctl_execution_start
 function get_systemctl_consensus_start
 {
     local o=""
-    if [ "ocean" == "$network" ]; then
-        o="--genesis-state $path/Bahamut/ocean/genesis.ssz ${ocean_bootstrap_node}"
+    if [ "horizon" == "$network" ]; then
+        o="--genesis-beacon-api-url="https://beacon1-horizon.bahamut.io""
     fi
     echo "ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use --p2p-static-id --${min_sync_peers} --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex ${o}"
 }
@@ -725,7 +701,7 @@ function init_directory
     done
     if [ "true" == "$f" ]; then
         echo -ne $(info "Starting the create jwt.hex files..")
-        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/ocean/datadirs/jwt.hex
+        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/horizon/datadirs/jwt.hex
         openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/sahara/datadirs/jwt.hex
         echo " Done"
     else
@@ -756,7 +732,7 @@ function init_systemctl
             done
         done
         info "The systemctl files are enables."
-        info "Systemctl commands examples - sudo systemctl start/stop/restart/status bahamut_ocean_execution.service."
+        info "Systemctl commands examples - sudo systemctl start/stop/restart/status bahamut_horizon_execution.service."
     else
         info "Deny operation with systemctel."
     fi
@@ -778,7 +754,6 @@ function install_function
     check_install_dependency
     check_versions_flag
     init_directory
-    download_genesis
     for i in $network_name; do
         download_configurations $i
     done
@@ -815,8 +790,8 @@ function start_validator
 function start_consensus
 {
     local o=""
-    if [ "ocean" == "$network" ]; then
-        o="--genesis-state $path/Bahamut/ocean/genesis.ssz ${ocean_bootstrap_node}"
+    if [ "horizon" == "$network" ]; then
+        o="--genesis-beacon-api-url="https://beacon1-horizon.bahamut.io""
     fi
     echo -ne $(info "Starting the new ${network} ${1} process...")
     local beacon_chain_log_file="$path/Bahamut/${network}/log/consensus/${1}_`date +\"%Y_%m_%d_%T\"`"
@@ -942,7 +917,6 @@ function update_function
     check_update_and_reset_dependency
     rm -rf $download_path
     mkdir -p $path/download
-    download_genesis
     for i in $projects; do
         download_binaries_and_extract $i
     done
@@ -1183,8 +1157,8 @@ function reset_function
     local p=""
     check_update_and_reset_dependency
     if [ -z "$network" ]; then
-        p="Network not specified. Do you want to drop ocean and sahara entire contents of databases? Enter:"
-        network="sahara ocean"
+        p="Network not specified. Do you want to drop horizon and sahara entire contents of databases? Enter:"
+        network="sahara horizon"
     else
         p="Do you want to drop ${network} entire contents of database? Enter:"
     fi
