@@ -2,7 +2,7 @@
 SyncMode = "snap"
 
 [Node]
-DataDir = "Bahamut/oasis/datadirs/execution/"
+DataDir = "Bahamut/horizon/datadirs/execution/"
 HTTPHost = "127.0.0.1"
 HTTPPort = 8547
 HTTPVirtualHosts = ["localhost"]

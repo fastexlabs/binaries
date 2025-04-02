@@ -33,7 +33,7 @@ chmod +x bahamut
 ./bahamut install
 ```
 
-This command will download the latest Caravan binaries from the tagged releases in the execution layer repository. After the install added Bahamut/sahara/sahara_config.toml and Bahamut/oasis/oasis_config.toml config files, in which you can change ports.
+This command will download the latest Caravan binaries from the tagged releases in the execution layer repository. After the install added Bahamut/sahara/sahara_config.toml and Bahamut/horizon/horizon_config.toml config files, in which you can change ports.
 
 ## Usage
 
@@ -90,7 +90,7 @@ To update the Caravan node, run:
 ## Options
 
 - `--help`: Show help information and a list of available commands.
-- `--network`: Specify the network to connect the Caravan node to, e.g., `--network sahara` or `--network oasis`.
+- `--network`: Specify the network to connect the Caravan node to, e.g., `--network sahara` or `--network horizon`.
 
 ## Support
 

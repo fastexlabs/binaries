@@ -3,25 +3,36 @@
 path=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 action=""
 network=""
-version="v1.1.0"
-execution="execution"
+version="v2.3.0"
+github_version_count=0
+kill_attempt_count=15
 script_name="bahamut"
-network_names="oasis sahara"
-oasis_config_name="oasis_config.toml"
-sahara_config_name="sahara_config.toml"
+network_name="sahara horizon"
+projects="execution consensus"
 download_path="$path/download"
-mainnet_directory="$path/Bahamut/mainnet"
-oasis_config_file="$path/Bahamut/oasis/${oasis_config_name}"
-sahara_config_file="$path/Bahamut/sahara/${sahara_config_name}"
-execution_pid=`pidof "$execution" | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1`
-process_info_execution=`ps -ef | grep "$execution" | grep "$execution_pid" 2>&1`
+min_sync_peers="min-sync-peers 1"
+public_keys=""
+fee_recipient=""
+validator_keys_dir=""
 
-github_execution="fastexlabs/caravan"
 github_binaries="fastexlabs/binaries"
-binary_url="https://github.com/${github_binaries}/releases/download"
-oasis_config_url="https://raw.githubusercontent.com/${github_binaries}/master/${oasis_config_name}"
-sahara_config_url="https://raw.githubusercontent.com/${github_binaries}/master/${sahara_config_name}"
-bahamut_script_url="https://raw.githubusercontent.com/${github_binaries}/master/${script_name}"
+binaries_tags_url="https://api.github.com/repos/$github_binaries/tags"
+binaries_releases_url="https://api.github.com/repos/$github_binaries/releases/tags/${version}"
+horizon_config_url="https://github.com/${github_binaries}/raw/validator-integration/horizon_config.toml"
+sahara_config_url="https://github.com/${github_binaries}/raw/validator-integration/sahara_config.toml"
+bahamut_script_url="https://github.com/${github_binaries}/raw/validator-integration/${script_name}"
+
+declare -A ports
+ports=( [sahara.p2p-udp-port]=12000
+        [sahara.p2p-tcp-port]=13000
+        [sahara.grpc-gateway-port]=3500
+        [sahara.rpc-port]=4000
+        [sahara.authrpc]=8551
+        [horizon.p2p-udp-port]=12001
+        [horizon.p2p-tcp-port]=13001
+        [horizon.grpc-gateway-port]=3501
+        [horizon.rpc-port]=4001
+        [horizon.authrpc]=8552 )
 
 function red()
 {
@@ -43,6 +54,11 @@ function blue()
     echo -e "\033[94m$1\033[0m"
 }
 
+function yellow()
+{
+    echo -e "\033[33m$1\033[0m"
+}
+
 function error
 {
     echo "$(red "Error: ")$1"
@@ -58,44 +74,137 @@ function info
     echo "$(green "Info: ")$1"
 }
 
+function conf
+{
+    echo "$(yellow "Conf: ")$1"
+}
+
+function start_spinner
+{
+    set +m
+    echo -ne $(info "${1}")
+    while : ; do
+        for X in / - \\ \|; do
+            echo -en "\b$X"
+            sleep 0.1
+        done
+    done & 2>/dev/null
+    spinner_pid=$!
+}
+
+function stop_spinner
+{
+    { kill -9 $spinner_pid && wait; } 2>/dev/null
+    set -m
+    echo -en "\033[2K\r"
+}
+
 function print_help
 {
-    #Name:
-    echo "Name:"
-    echo -e "\tThis script automatically sets up and runs Caravan - the Execution layer of Fastex chain (Bahamut) blockchain."
-    echo -e "\tThe execution layer client that operates Fastex Chain is written in Go. Running the execution layer helps the user setup and maintain a Caravan node."
-    echo -e "\tThe consensus layer is an implementation of the proof-of-stake-and-activity consensus specification." 
-    #Usage:
+    echo "BAHAMUT"
     echo -e "\n"
-    echo "Usage:"
+    #Name
+    echo "NAME:"
+    echo -e "\tbahamut"
+    #DESCRIPTION
+    echo -e "\n"
+    echo "DESCRIPTION:"
+    echo -e "\tThis script automatically sets up and runs Caravan - the Execution and Beacon-Chain -the Consensus layers, and Validator client of Fastex chain (Bahamut) blockchain."
+    echo -e "\tThe execution layer client that operates Fastex Chain is written in Go. Running the execution layer helps the user setup and maintain a Caravan node."
+    echo -e "\tThe consensus layer is an implementation of the proof-of-stake-and-activity consensus specification written in Go."
+    echo -e "\tThe validator client that performs block creation and validation operations written in Go."
+    #Usage
+    echo -e "\n"
+    echo "USAGE:"
     echo -e "\tbahamut OPTIONS [arguments]" 
     #Mandatory options
     echo -e "\n"
-    echo "Mandatory OPTIONS:"
-    echo -e "\tinstall|start|stop|restart|status|update - Main action(s) to be performed."
-    echo -e "\tstart - Starts the Caravan node."
-    echo -e "\tstop - Stops the Caravan node."
-    echo -e "\tstatus - Returns the current status of Caravan."
-    echo -e "\tinstall - Installs Caravan dependencies needed for the start."
-    echo -e "\tupdate - Updates Caravan binaries and native scripts."
-    echo -e "\t-n, --network - Necessary to connect to the network. Network can be Sahara (mainnet) or Oasis (testnet)."
-    #Arguments:
+    echo "MANDATORY OPTIONS:"
+    echo -e "\tinstall|start|stop|restart|status|update|reset|validator - Main action(s) to be performed."
+    echo -e "\tstart - Starts the Execution and Consensus Layer nodes"
+    echo -e "\tstop - Stops the Execution and Consensus Layer nodes."
+    echo -e "\tstatus - Returns the current status of Execution and Consensus Layer nodes."
+    echo -e "\tinstall - Installs the Execution and Consensus Layer dependencies needed for the start."
+    echo -e "\tupdate - Updates Execution and Consensus Layer binaries and native scripts."
+    echo -e "\treset - Resets the Execution and Consensus Layer databases."
     echo -e "\n"
-    echo "arguments:"
+    echo -e "\tvalidator - Validator option which has its actions - install|start|stop|restart|update|import|list|exit|remove"
+    echo -e "\t\tstart - Starts the Validator client."
+    echo -e "\t\tstop - Stops the Validator client."
+    echo -e "\t\tlist - Check the list of imported validators."
+    echo -e "\t\tinstall - Install Bahamut dependencies needed for validator client the start."
+    echo -e "\t\texit - Execute voluntary exit of your validators."
+    echo -e "\t\timport - Imports validator keys."
+    echo -e "\t\tremove - Remove imported validators from Bahamut Validator client."
+    #Arguments
+    echo -e "\n"
+    echo "ARGUMENTS:"
     echo -e "\t--help, -h - Show help."
     echo -e "\t--version, -v - Manually set the binaries version. Default version is the latest version."
+    echo -e "\t-n, --network - Must connect to the network. Network can be Sahara (mainnet) or Horizon (testnet)."
     #Examples
     echo -e "\n"
-    echo -e "Examples:"
-    echo -e "\t- ./bahamut start -n=oasis"
-    echo -e "\t- ./bahamut update"
+    echo -e "EXAMPLES:"
+    echo -e "\t- ./bahamut start -n=horizon"
+    echo -e "\t\t Starts horizon node. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut install."
+    echo -e "\n"
+    echo -e "\t- ./bahamut update --version v1.0.0"
+    echo -e "\t\t Update bahamut script with binaries v1.0.0 version. If there is a running process, terminate it with Stop action. Example ./bahamut stop."
+    echo -e "\n"
     echo -e "\t- ./bahamut stop"
+    echo -e "\t\t If Sahara and Horizon are running at the same time, specify which network to swich off. Example ./bahamut stop --network horizon."
+    echo -e "\n"
+    echo -e "\t- ./bahamut restart"
+    echo -e "\t\t If Sahara and Horizon are running at the same time, specify which network to restart. Example ./bahamut restart --network horizon."
+    echo -e "\n"
+    echo -e "\t- ./bahamut reset"
+    echo -e "\t\t If neither Sahara nor Horizon network is specified, both databases will be reset. In order to reset one of them, provide the network name. Example ./bahamut reset -n=horizon."
+    echo -e "\n"
+    echo -e "VALIDATOR EXAMPLES:"
+    echo -e "\t- ./bahamut validator start -n=horizon"
+    echo -e "\t\t To start the Bahamut Validator client. If there are no dependencies necessary for start, it is necessary to install first. Example ./bahamut validator install."
+    echo -e "\n"
+    echo -e "\t- ./bahamut validator install"
+    echo -e "\t\t To install Bahamut dependencies needed for the start."
+    echo -e "\n"
+    echo -e "\t- ./bahamut validator import --validator-keys-dir=... --network=sahara"
+    echo -e "\t\t Once your validator keys are generated, they can be imported, to do it."
+    echo -e "\n"
+    echo -e "\t- ./bahamut validator list --network=sahara"
+    echo -e "\t\t To check the list of imported validators."
+    echo -e "\n"
+    echo -e "\t- ./bahamut validator exit --public-keys=... --network=horizon"
+    echo -e "\t\t To execute voluntary exit of your validators."
+    echo -e "\n"
+    echo -e "\t- ./bahamut validator remove --public-keys=... --network=horizon"
+    echo -e "\t\t To remove imported validators from Bahamut Validator client."
+    echo -e "\n"
+    #Systemctl commands
+    echo -e "\n"
+    echo -e "SYSTEMCTL COMMANDS EXAMPLES:"
+    echo -e "\tsudo systemctl start bahamut_horizon_execution.service - Start the Execution Layer node."
+    echo -e "\tsudo systemctl stop bahamut_sahara_consensus.service - Stop the Consensus Layer node."
+    echo -e "\tsudo systemctl restart bahamut_sahara_consensus.service - Restart the Consensus Layer node."
+    echo -e "\tsudo systemctl status bahamut_horizon_execution.service - Show the Execution Layer node status."
+    echo -e "\n"
 }
 
 function check_network()
 {
-    if [ "$network" != "mainnet" ] && [ "$network" != "oasis" ] && [ "$network" != "sahara" ]; then
-        error "Network name must be \"mainnet\",\"oasis\"\"sahara\"."
+    if [ -z "$network" ]; then
+        error "Network is mandatory option during start. Type --help or -h to see the correct options."
+        exit 1
+    fi
+    if [  "mainnet" != "$network" ] && [ "horizon" != "$network" ] && [ "sahara" != "$network" ]; then
+        error "Network name must be \"mainnet\",\"horizon\",\"sahara\"."
+        exit 1
+    fi
+}
+
+function check_action
+{
+    if ! [ -z "$action" ]; then
+        error "Please specify only one of start|stop|status|restart|install|update|validator options!!!"
         exit 1
     fi
 }
@@ -132,19 +241,40 @@ while [[ $# -gt 0 ]]; do
         -v|--version|-v=*|--version=*)
             version=$(get_option $1 $2)
             shift $(get_shift $1)
+            ((github_version_count=github_version_count + 1))
             ;;
-        --os|--os=*)
-            os=$(get_option $1 $2)
-            shift $(get_shift $1)
-            ;;
-        start|stop|status|restart|install|update)
-            if ! [ -z "$action" ]; then
-                error "Please specify only one of start|stop|status|restart|install|update options!!!"
-                exit 1
-            fi
+        start|stop|status|restart|install|update|reset)
+            check_action
             action=$1
             shift
             ;;
+        --validator-keys-dir|--validator-keys-dir=*)
+            validator_keys_dir=$(get_option $1 $2)
+            shift $(get_shift $1)
+			;;
+        --fee-recipient|--fee-recipient=*)
+            fee_recipient=$(get_option $1 $2)
+            shift $(get_shift $1)
+			;;
+        --public-keys|--public-keys=*)
+            public_keys=$(get_option $1 $2)
+            shift $(get_shift $1)
+			;;
+        validator)
+        shift
+        case $1 in
+            start|stop|list|install|exit|import|remove)
+                projects="validator"
+                action=validator_$1
+                shift
+                ;;
+            *)
+                error "Main action \"start\", \"stop\", \"list\", \"restart\", \"install\", \"exit\", \"import\", \"remove\" is missing!!!"
+                info "For more details please use -h|--help option."
+                exit 1
+                ;;
+        esac
+        ;;
         *)
             error "Unknown option $1. Type --help or -h to see the correct options."
             exit 1
@@ -152,329 +282,907 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+declare -A project_pids
+for i in $projects; do
+    pid=$(pidof $i | xargs pwdx 2>&1 | grep "$path" | cut -d: -f1)
+    pid_path=$(pidof $i | xargs pwdx 2>&1 | grep "$path" | cut -d: -f2 | sed 's/^ *//')
+    for j in $pid_path; do
+        if [ "$path" == "$j" ]; then
+            for c in $pid; do
+                for f in $network_name; do
+                    if ps -fp "$c" | grep "$f" > /dev/null 2>&1; then
+                        project_pids["${f}_${i}_pid"]="$c"
+                    fi
+                done
+            done
+        fi
+    done
+done
+
 if [ -z "$action" ]; then
-    error "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\", \"update\" is missing!!!"
+    error "Main action \"start\", \"stop\", \"status\", \"restart\", \"install\", \"update\", \"reset\" is missing!!!"
     info "For more details please use -h|--help option."
     exit 1
 fi
 
+##############################################
+#This is done for users who ran the script on the mainnet
+if [ -z "${project_pids["horizon_execution_pid"]}" ] && [ -z "${project_pids["sahara_execution_pid"]}" ] && [ -d "$path/Bahamut/mainnet" ]; then
+    rm -rf $path/Bahamut/sahara
+    mv -f $path/Bahamut/mainnet $path/Bahamut/sahara
+fi
+
+if [ "mainnet" == "$network" ]; then
+    network="sahara"
+fi
+##############################################
+
+
 function read_confirmation()
 {
     OIFS=$IFS
-    IFS='/'
+    IFS='/ or'
     while [ true ]; do
         read -p "$1 [$2] " -r
-        v=`echo "$REPLY" | tr '[:upper:]' '[:lower:]'`
+        v=$(echo "$REPLY" | tr '[:upper:]' '[:lower:]')
         for x in $2; do
-            c=`echo "$x" | tr '[:upper:]' '[:lower:]'`
-                if [ "$c" == "$v" ]; then
-                    IFS=$OIFS
-                    echo $x
-                    return
-                fi
+            c=$(echo "$x" | tr '[:upper:]' '[:lower:]')
+            if [ "$c" == "$v" ]; then
+                IFS=$OIFS
+                echo $x
+                return
+            fi
         done
+
+        if [ "$v" == "yes" ] || [ "$v" == "y" ]; then
+            IFS=$OIFS
+            echo "Y"
+            return
+        elif [ "$v" == "no" ]; then
+            IFS=$OIFS
+            echo "No"
+            return
+        fi
     done
 }
 
 function check_install_dependency
 {
     if ! which openssl > /dev/null 2>&1; then
-        error "openssl is not found"
+        error "The openssl is not found"
         exit 1     
     fi
-    if ! which wget >/dev/null 2>&1; then
+    if ! which wget > /dev/null 2>&1; then
         error "The wget could not be found. You need to install wget to run the script."
         exit 1
     fi
-    if ! which curl >/dev/null 2>&1; then
+    if ! which tr > /dev/null 2>&1; then
+        error "The tr could not be found. You need to install tr to run the script."
+        exit 1
+    fi
+    if ! which curl > /dev/null 2>&1; then
         error "The curl could not be found. You need to install curl to run the script."
         exit 1
     fi
 }
 
-function check_mainnet_network
-{
-    if [ -z "$execution_pid" ] && [ -d "$mainnet_directory" ]; then
-        rm -rf $path/Bahamut/sahara
-        mv $path/Bahamut/mainnet $path/Bahamut/sahara
-    fi
-    if [ "$network" == "mainnet" ]; then
-        network="sahara"
-    fi
-
-}
-
 function check_start_dependency
 {
+    for i in $projects; do
+        if [ ! -f "$path/Bahamut/${i}" ]; then
+            error "The ${i} file not found. Please do the following first ./bahamut install"
+            exit 1
+        fi
+        if [ ! -x "$path/Bahamut/${i}" ]; then
+            error "The ${i} is not executable. Please do the following first ./bahamut install"
+            exit 1
+        fi
+    done
+}
+
+function check_stop_dependency_and_init
+{
     if [ -z "$network" ]; then
-        error "Network is mandatory option during start. Type --help or -h to see the correct options."
-        exit 1
-    fi
-    if [ ! -f "$path/Bahamut/${1}" ]; then
-        error "The ${1} files not found. Please do the following first ./bahamut install"
-        exit 1
-    fi
-    if [ ! -x "$path/Bahamut/${1}" ]; then
-        error "The ${1} are not executable. Please do the following first ./bahamut install"
-        exit 1
-    fi
-    if [ ! -f "$oasis_config_file" ] && [ ! -f "$sahara_config_file" ]; then
-        error "The files oasis_config.toml and sahara_config.toml do not exist. Please do the following first ./bahamut install"
-        exit 1
-    fi
-}
-
-function remove_spaces
-{
-    echo "(^|[[:space:]])"${1}"($|[[:space:]])"
-}
-
-function check_versions_flag
-{
-    if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        error "Invalid github version number format. Please use the format v1.0.0."
-        exit 1
-    else
-        tags=$(curl -s https://api.github.com/repos/$github_binaries/tags | grep -oP '"name": "\K[^"]+')
-        if ! [[ $tags =~ $(remove_spaces $version) ]]; then
-            error "The entered version was not found on github"
+        local c=0
+        local n=""
+        local p=$(pidof $projects)
+        if [ ! -z "$p" ]; then
+            for i in $network_name; do
+                local o=$(ps -fp $p)
+                if echo "$o" | grep -q $i; then
+                    ((c=c+1))
+                    n=$i
+                fi
+            done
+        fi
+        if [ 0 -eq $c ]; then
+            info "There is no running process."
+            exit 0
+        elif [ $c -eq 1 ]; then
+            network=$n
+        else
+            error "Sahara and Horizon are currently working. To restart, please indicate which network you want to ${action} example (./bahamut ${action} -n=horizon)."
             exit 1
         fi
     fi
 }
 
-function read_confirmation_for_stop
+function check_config
 {
-    if [ $execution_pid ]; then
-        c=$(read_confirmation "$(red "Do you want to ${action} running ${execution}?")" "Y/N")
-        if [ "$c" != "Y" ]; then
+    for i in $network_name; do
+        if [ ! -f $(get_config_file $i) ]; then
+            info "The file $(get_config_name $i) do not exist. Please do the following first ./bahamut install"
             exit 0
+        fi
+    done
+}
+
+function check_update_and_reset_dependency
+{
+    if [ ! -d $path/Bahamut ]; then
+        error "Please do the following first ./bahamut install"
+        exit 1
+    fi
+    for i in $network_name; do
+        for j in $projects; do
+            if [ ! -z "${project_pids["${i}_${j}_pid"]}" ]; then
+                error "To ${action}, it is necessary to stop the running processes. ./bahamut stop"
+                exit 1
+            fi
+        done
+    done
+}
+
+function check_public_keys
+{
+	if [ -z $public_keys ]; then
+        error "Public keys is mandatory option during this operation. Type --help or -h to see the correct options."
+        exit 1
+	fi
+}
+
+function check_versions_flag
+{
+    if [ $github_version_count -ge 2 ]; then
+        error "The version flag cannot be specified more than once."
+        exit 1
+    fi
+    if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        error "Invalid github version number format. Please use the format (example v1.0.0)."
+        exit 1
+    else
+        local t=$(curl -s "$binaries_tags_url" | grep -oP '"name": "\K[^"]+')
+        if ! [[ $t =~ (^|[[:space:]])"$version"($|[[:space:]]) ]]; then
+            error "The entered version was not found on github."
+            exit 1
+        fi
+    fi
+}
+
+function read_confirmation_and_stop
+{
+    local c=$(read_confirmation "$(conf "Do you want to stop running ${1} ${2} process? Enter:")" "Y/n")
+    if [ "Y" == "$c" ]; then
+        kill_process $1 $2 $3 "-15"
+        `ps -p $3` > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            kill_process $1 $2 $3 "-9"
         fi
     fi
 }
 
 function download_binaries_and_extract
 {
-    if [ "install" == "$action" ] && [ -f "$path/Bahamut/$1" ]; then
-        info "The $1 binary is exist."
+    if [[ "install" == "$action" && -x "$path/Bahamut/$1" ]] || [[ "validator_install" == "$action" && -x "$path/Bahamut/$1" ]]; then
+        info "The ${1} binary is exist."
     else
-        echo -ne $(info "Starting the process of loading ${1} binaries...")
-        json=$(curl -s -i -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$github_binaries/releases/tags/${version}")
-        urls=$(grep browser_download_url <<< "$json" | sed 's/.*"browser_download_url": "\(.*\)"/\1/')
-        for url in $urls; do
-            wget -P $download_path $url > /dev/null 2>&1
-            if ! [ 0 -eq $? ]; then
-                error "Failed to download the binaries."
-                exit 1
-            fi
-        done
-        echo " Done"
-        echo -ne $(info "Starting the process of extract ${1} binaries...")
+        info "Starting the process of downloading ${1} binaries file. Please wait."
+        local j=$(curl -s -i -H "Accept: application/vnd.github.v3+json" "$binaries_releases_url")
+        local urls=$(grep browser_download_url <<< "$j" | sed 's/.*"browser_download_url": "\(.*\)"/\1/')
+        local url=$(echo "$urls" | grep -o "https://[^ ]*${1}[^ ]*")
+        wget -P $download_path/ $url -q --show-progress
+        if ! [ $? -eq 0 ]; then
+            error "Failed to download the binaries."
+            exit 1
+        fi
         cd $download_path
         for file in $(ls | grep tar.gz); do
+            start_spinner "Starting the process of extract ${1} binary file. Please wait.."
             tar -xzf $file > /dev/null 2>&1 && rm $file > /dev/null 2>&1
-            if ! [ 0 -eq $? ]; then
-                error "Failed to extract or remove the binaries file."
+            if ! [ $? -eq 0 ]; then
+                error "Failed to extract or remove ${1} binaries file."
                 exit 1
+            else
+                stop_spinner
             fi
+            info "Starting the process of extract ${1} binary file. Please wait. Done."
         done
-        echo " Done"
         cd - > /dev/null
+        mv -f $download_path/$1 $path/Bahamut/ > /dev/null 2>&1
+        if ! [ $? -eq 0 ]; then
+            error "Failed to move ${1} binaries file."
+            exit 1
+        fi
     fi
 }
 
 function download_bahamut_script
 {
-    echo -ne $(info "Starting the process of loading ${script_name} script...")
-    wget -P $download_path $bahamut_script_url > /dev/null 2>&1
-    if ! [ 0 -eq $? ]; then
+    echo -ne $(info "Starting the process of downloading ${script_name} script...")
+    wget -P $download_path/ $bahamut_script_url > /dev/null 2>&1
+    if ! [ $? -eq 0 ]; then
         error "Failed to download the ${script_name} script."
         exit 1
     fi
     chmod +x $download_path/$script_name
+    mv -f $download_path/$script_name $path > /dev/null 2>&1
     echo " Done"
+}
+
+function get_config_name
+{
+    echo "${1}_config.toml"
+}
+
+function get_config_file
+{
+    local n=$(get_config_name ${1})
+    echo "$path/Bahamut/${1}/${n}"
 }
 
 function download_configurations
 {
-    config=${1}_config_url
-    if [ "install" == "$action" ] && [ -f "${!config}" ]; then
+    local cf=$(get_config_file ${1})
+    local cu=${1}_config_url
+    if [ "install" == "$action" ] && [ -f "${cf}" ]; then
         info "The $1 config file is exist."
     else
-        echo -ne $(info "Starting the process of loading $1 config file...")
-        wget -P $download_path ${!config} > /dev/null 2>&1
-        if ! [ 0 -eq $? ]; then
-            error "Failed to download the ${1} config file."
+        info "Starting the process of downloading $(get_config_name ${1}) file..."
+        wget -P $download_path/ ${!cu} -q --show-progress
+        if ! [ $? -eq 0 ]; then
+            error "Failed to download configs files."
             exit 1
         fi
+        local n=$(get_config_name ${1})
+        mv -f "$download_path/${n}" $path/Bahamut/${1}/ > /dev/null 2>&1
+    fi
+}
+
+function read_fee_recipient
+{
+	if [ -z "$fee_recipient" ]; then
+		while [ true ]; do
+			read -p "Please enter your fee recipient address: " v
+			echo $v
+			if ! [[ 42 -eq ${#v} ]]; then
+				error "Fee recipient must be 20 bytes length address with \'0x\' prefix"
+				continue
+			fi
+			if ! [[ "0x" -eq ${v:0:2} ]]; then
+				error "Fee recipient must be 20 bytes length address with \'0x\' prefix"
+				continue
+			fi
+			fee_recipient=$v
+			break
+		done
+	fi
+}
+
+function check_fee_recipient
+{
+	if [ -z "$fee_recipient" ]; then
+        error "Fee recipient is mandatory option during start. Type --help or -h to see the correct options."
+        exit 1
+	fi
+	if ! [ 42 -eq ${#fee_recipient} ]; then
+        error "Fee recipient must be 20 bytes length address with `0x` prefix"
+        exit 1
+	fi
+	if ! [ "0x" = ${fee_recipient:0:2} ]; then
+        error "Fee recipient must be 20 bytes length address with `0x` prefix"
+        exit 1
+	fi
+}
+
+function check_validator_is_active
+{
+    if [ ! "${project_pids[${network}_${projects}_pid]}" ]; then
+        error "The validator is not running. Please do the following first ./bahamut validator start"
+        exit 1
+    fi
+}
+
+function read_password
+{
+    local password=""
+    local char
+    echo -n "Enter your password: "
+    while true; do
+        while IFS= read -rs -n 1 char; do
+            if [[ $char == $'\0' ]]; then
+                break
+            fi
+            if [[ $char == $'\177' ]]; then
+                if [ -n "$password" ]; then
+                    password="${password%?}"
+                    echo -ne "\b \b"
+                fi
+            else
+                password+="$char"
+                echo -n "*"
+            fi
+        done
+        if [ -n "$password" ]; then
+            echo
+            break
+        else
+            echo -e "\nPassword cannot be empty. Please try again."
+            echo -n "Enter your password: "
+        fi
+    done
+    echo "$password" > "${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt"
+}
+
+function check_password_file
+{
+	if ! [ -f "${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt" ]; then
+		read_password
+	fi
+}
+
+function get_systemctl_files_path
+{
+    echo "/etc/systemd/system/bahamut_${1}_${2}.service"
+}
+
+function get_systemctl_execution_start
+{
+    echo "ExecStart=${path}/Bahamut/${2} --${1} --authrpc.jwtsecret=$path/Bahamut/${1}/datadirs/jwt.hex --config=$path/Bahamut/${1}/$(get_config_name ${1})"
+}
+
+function get_systemctl_consensus_start
+{
+    local o=""
+    if [ "horizon" == "$network" ]; then
+        o="--genesis-beacon-api-url="https://beacon1-horizon.bahamut.io""
+    fi
+    echo "ExecStart=${path}/Bahamut/${2} --execution-endpoint="http://127.0.0.1:${ports[${1}.authrpc]}" --p2p-udp-port ${ports[${1}.p2p-udp-port]} --p2p-tcp-port ${ports[${1}.p2p-tcp-port]} --grpc-gateway-port ${ports[${1}.grpc-gateway-port]} --rpc-port ${ports[${1}.rpc-port]} --accept-terms-of-use --p2p-static-id --${min_sync_peers} --${1} --datadir=$path/Bahamut/${1}/datadirs/${2} --jwt-secret=$path/Bahamut/${1}/datadirs/jwt.hex ${o}"
+}
+
+function get_systemctl_validator_start
+{
+    echo "ExecStart=${path}/Bahamut/${2} --${1} --accept-terms-of-use --wallet-dir="${path}/Bahamut/${1}/datadirs/validator/wallet" --wallet-password-file="${path}/Bahamut/${1}/datadirs/validator/wallet_password.txt" --datadir="${path}/Bahamut/${1}/datadirs/validator" --suggested-fee-recipient="${fee_recipient}" --beacon-rpc-provider="127.0.0.1:${ports[${1}.rpc-port]}""
+}
+
+function generate_systemctl_files
+{
+    local u=$(whoami)
+    local exec_start=$(get_systemctl_${2}_start ${1} ${2})
+    local systemctl_file=$(get_systemctl_files_path ${1} ${2})
+    local service_file_content="[Unit]
+Description=The ${2} layer node
+
+[Service]
+WorkingDirectory=${path}
+ExecStartPre=/bin/chmod +x ${path}/Bahamut/${2}
+${exec_start}
+User=${u}
+Group=${u}
+Type=simple
+KillSignal=SIGINT
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target"
+    echo "$service_file_content" | sudo tee "${systemctl_file}" > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Failed to create the file."
+    fi
+    echo -ne $(info "Starting the generate ${1} ${2} system file...")
+    echo " Done"
+}
+
+function init_directory
+{
+    local f=false
+    for i in $network_name; do
+        if [ ! -f "$path/Bahamut/${i}/datadirs/jwt.hex" ]; then
+            rm -rf $path/Bahamut/${i}/datadirs/*
+            f=true
+        fi
+    done
+    for i in $network_name; do
+        for j in $projects; do
+            mkdir -p $path/Bahamut/${i}/datadirs/${j}
+            mkdir -p $path/Bahamut/${i}/log/${j}
+        done
+    done
+    if [ "true" == "$f" ]; then
+        echo -ne $(info "Starting the create jwt.hex files..")
+        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/horizon/datadirs/jwt.hex
+        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/sahara/datadirs/jwt.hex
         echo " Done"
+    else
+        info "The jwt.hex files exist."
+    fi
+    rm -rf $download_path
+    mkdir -p $download_path
+}
+
+function init_systemctl
+{
+    c=$(read_confirmation "$(conf "Would you like to run the script with systemctl? Enter:")" "Y/n")
+    if [ "Y" == "$c" ]; then
+        info "This script requires root privileges."
+        if [ "validator" == "$projects" ]; then
+            read_fee_recipient
+        fi
+        for i in $projects; do
+            for j in $network_name; do
+                service_file=${j}_${i}_system_file
+                service_file_name="bahamut_${j}_${i}.service"
+                if [ ! -f "${!service_file}" ]; then
+                    generate_systemctl_files $j $i
+                    sudo systemctl enable $service_file_name > /dev/null 2>&1
+                else
+                    info "The ${service_file_name} file is exist."
+                fi
+            done
+        done
+        info "The systemctl files are enables."
+        info "Systemctl commands examples - sudo systemctl start/stop/restart/status bahamut_horizon_execution.service."
+    else
+        info "Deny operation with systemctel."
     fi
 }
 
-function move_binaries
+function validator_install_function
 {
-    if [ -f "$download_path/$1" ]; then
-        rm -rf $path/Bahamut/$1
-        mv $download_path/$1 $path/Bahamut/
-    fi
-}
-
-
-function install_action_files_transfer
-{
-    config_name=${1}_config_name
-    if [ -f "$download_path/${!config_name}" ]; then
-        mv $download_path/${!config_name} $path/Bahamut/${1}
-    fi
-}
-
-function update_action_files_transfer
-{
-    if [ -f "$download_path/$script_name" ]; then
-        mv $download_path/$script_name $path
-    fi
+    check_install_dependency
+    check_versions_flag
+    init_directory
+    download_binaries_and_extract $projects
+    download_binaries_and_extract deposit
+    rm -rf $download_path
+    init_systemctl
 }
 
 function install_function
 {
     check_install_dependency
     check_versions_flag
-    rm -rf $download_path
-    mkdir -p $path/Bahamut/oasis/datadirs/execution $path/Bahamut/sahara/datadirs/execution
-    mkdir -p $path/Bahamut/oasis/log/execution $path/Bahamut/sahara/log/execution
-    mkdir -p $path/download
-    if [ ! -f "$path/Bahamut/oasis/datadirs/jwt.hex" ] || [ ! -f "$path/Bahamut/sahara/datadirs/jwt.hex" ]; then
-        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/oasis/datadirs/jwt.hex
-        openssl rand -hex 32 | tr -d "\n" > $path/Bahamut/sahara/datadirs/jwt.hex
-    fi
-    for i in $network_names; do
+    init_directory
+    for i in $network_name; do
         download_configurations $i
-        install_action_files_transfer $i
     done
-    download_binaries_and_extract $execution
-    move_binaries $execution
+    for i in $projects; do
+        download_binaries_and_extract $i
+    done
     rm -rf $download_path
-    check_mainnet_network
+    init_systemctl
+}
+
+function start_validator
+{
+    echo -ne $(info "Starting the new ${network} ${i} process...")
+    local validator_log_file="$path/Bahamut/${network}/log/validator/${i}_`date +\"%Y_%m_%d_%T\"`"
+    nohup $path/Bahamut/$i \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="${path}/Bahamut/${network}/datadirs/validator/wallet" \
+		--wallet-password-file="${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt" \
+		--datadir="${path}/Bahamut/${network}/datadirs/validator" \
+		--suggested-fee-recipient="${fee_recipient}" \
+		--beacon-rpc-provider="127.0.0.1:${ports[${network}.rpc-port]}" > $validator_log_file 2>&1 &
+    echo " Done"
+    while true; do
+        curl localhost:8081/healthz > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            rm ${path}/Bahamut/${network}/datadirs/validator/wallet_password.txt
+            break
+        fi
+        sleep 2
+    done
+}
+
+function start_consensus
+{
+    local o=""
+    if [ "horizon" == "$network" ]; then
+        o="--genesis-beacon-api-url="https://beacon1-horizon.bahamut.io""
+    fi
+    echo -ne $(info "Starting the new ${network} ${1} process...")
+    local beacon_chain_log_file="$path/Bahamut/${network}/log/consensus/${1}_`date +\"%Y_%m_%d_%T\"`"
+    nohup $path/Bahamut/$1 ${o} \
+        --execution-endpoint="http://127.0.0.1:${ports[${network}.authrpc]}" \
+        --p2p-udp-port ${ports[${network}.p2p-udp-port]} \
+        --p2p-tcp-port ${ports[${network}.p2p-tcp-port]} \
+        --grpc-gateway-port ${ports[${network}.grpc-gateway-port]} \
+        --rpc-port ${ports[${network}.rpc-port]} \
+        --accept-terms-of-use \
+        --p2p-static-id \
+        --${min_sync_peers} \
+        --${network} \
+        --datadir=$path/Bahamut/$network/datadirs/consensus \
+        --jwt-secret=$path/Bahamut/${network}/datadirs/jwt.hex > $beacon_chain_log_file 2>&1 &
+    echo " Done"
 }
 
 function start_execution
 {
-    check_mainnet_network
-    echo -ne $(info "Starting the new ${1} process...")
-    execution_log_file="$path/Bahamut/${network}/log/${1}/${1}_`date +\"%Y_%m_%d_%T\"`"
-    config=${network}_config_file
+    echo -ne $(info "Starting the new ${network} ${1} process...")
+    local execution_log_file="$path/Bahamut/${network}/log/${1}/${1}_`date +\"%Y_%m_%d_%T\"`"
+    local config=$(get_config_file $network)
     nohup $path/Bahamut/$1 \
-    --$network \
-    --authrpc.jwtsecret=$path/Bahamut/${network}/datadirs/jwt.hex \
-    --config ${!config} > $execution_log_file 2>&1 &
+        --$network \
+        --authrpc.jwtsecret=$path/Bahamut/${network}/datadirs/jwt.hex \
+        --config ${config} > $execution_log_file 2>&1 &
     echo " Done"
 }
 
+function validator_start_function
+{
+    check_network
+    check_start_dependency
+    read_fee_recipient
+    check_fee_recipient
+    check_password_file
+    for i in $projects; do
+        if [ "${project_pids[${network}_${i}_pid]}" ]; then
+            error "The process $network ${i} is already started with pid="${project_pids[${network}_${i}_pid]}""
+            continue
+        else
+            start_${i} ${i}
+        fi
+    done
+}
 
 function start_function
 {
-    check_start_dependency $execution
-    if [ "$execution_pid" ]; then
-        error "The process ${execution} is already started with pid=${execution_pid}"
-        exit 1
-    fi
-    start_execution $execution
+    check_network
+    check_config
+    check_start_dependency
+    for i in $projects; do
+        if [ "${project_pids[${network}_${i}_pid]}" ]; then
+            error "The process $network ${i} is already started with pid="${project_pids[${network}_${i}_pid]}""
+            continue
+        else
+            start_${i} ${i}
+        fi
+    done
 }
 
 function kill_process
 {
-    if [ "$2" ]; then
-        count=0
-        echo -ne $(info "Stopping the ${1} process with pid=${2}...")
-        kill -15 $2
-        while ps -p $2 > /dev/null; do 
+    if [ "$3" ]; then
+        local count=0
+        echo -ne $(info "Stopping the ${1} ${2} process with pid=${3}...")
+        kill $4 $3
+        while ps -p $3 > /dev/null; do
             sleep 2
             ((count=count + 1))
-            if [[ count -ge 15 ]]; then
-                error "The ${1} process does not shut down."
+            if [[ $count -ge $kill_attempt_count ]]; then
+                echo -ne $(info "The ${1} ${2} process does not shut down. Please wait...")
                 break
             fi
         done
         echo " Done"
-    else
-        info "There is no ${1} running process."
     fi
 }
 
 function stop_function
 {
-    read_confirmation_for_stop
-    kill_process $execution $execution_pid
-    execution_pid=""
+    check_stop_dependency_and_init
+    for i in $projects; do
+        if [ "${project_pids[${network}_${i}_pid]}" ]; then
+            read_confirmation_and_stop $network $i "${project_pids[${network}_${i}_pid]}"
+        else
+            info "There is no ${network} ${i} running process."
+        fi
+    done
 }
 
-function init_network
+function validator_stop_function
 {
-    if [[ ${process_info_execution} == *"--oasis"* ]]; then
-        network="oasis"
-    else
-        network="sahara"
-    fi
+    check_stop_dependency_and_init
+    for i in $projects; do
+        if [ "${project_pids[${network}_${i}_pid]}" ]; then
+            read_confirmation_and_stop $network $i "${project_pids[${network}_${i}_pid]}"
+        else
+            info "There is no ${network} ${i} running process."
+        fi
+    done
+}
+
+function init_http_port
+{
+    local http_port=$(grep "HTTPPort" "${1}" | awk -F "=" '{print $2}' | tr -d '[:space:]')
+    echo "$http_port"
 }
 
 function restart_function
 {
-    init_network
     stop_function
+    for key in "${!project_pids[@]}"; do
+        unset project_pids["$key"]
+    done
     start_function
 }
 
 function update_function
 {
-    if [ -d $path/Bahamut ]; then
-        check_versions_flag
-        rm -rf $download_path
-        mkdir -p $path/download
-        download_binaries_and_extract $execution
-        move_binaries $execution
-        download_bahamut_script
-        update_action_files_transfer
-        rm -rf $download_path
+    check_versions_flag
+    check_update_and_reset_dependency
+    rm -rf $download_path
+    mkdir -p $path/download
+    for i in $projects; do
+        download_binaries_and_extract $i
+    done
+    download_bahamut_script
+    rm -rf $download_path
+}
+
+function check_validator_keys_dir
+{
+	if [ -z $validator_keys_dir ]; then
+        error "Validator keys dir is mandatory option during import. Type --help or -h to see the correct options."
+        exit 1
+	fi
+	if ! [ -d $validator_keys_dir ]; then
+        error "Validator keys dir must be valid directory. Type --help or -h to see the correct options."
+        exit 1
+	fi
+}
+
+function validator_import_function
+{
+    check_validator_is_active
+	check_validator_keys_dir
+	check_network
+	$path/Bahamut/$projects accounts import \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet" \
+		--keys-dir="${validator_keys_dir}"
+}
+
+function check_execution_peers_count
+{
+    local f=$(get_config_file $1)
+    local http_port=$(init_http_port ${f})
+    local peers_count_request=$(curl -s \
+                        -H "Content-Type: application/json" \
+                        -X POST \
+                        --data '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' \
+                        127.0.0.1:${http_port})
+    if [ $? -eq 0 ]; then
+        local peers_count=$(echo "$peers_count_request" | grep -o '"result":"[^"]*"' | cut -d '"' -f 4)
+        local decimal_peers_count=$(printf "%d" "$peers_count")
+        if [ $decimal_peers_count -eq 0 ]; then
+            info "The ${1} ${2} is not syncing. Waiting to connect with peers."
+            exit 0
+        fi
     else
-        error "Please do the following first ./bahamut install"
+        info "The ${1} ${2} peer count request failed."
+        exit 1
     fi
 }
 
+function get_execution_json
+{
+    local f=$(get_config_file $1)
+    local http_port=$(init_http_port ${f})
+    local execution_json=$(curl -s \
+                        -H "Content-Type: application/json" \
+                        -X POST \
+                        --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
+                        127.0.0.1:${http_port})
+    if [ $? -ne 0 ]; then
+        info "The ${1} ${2} syncing status request failed."
+        exit 1
+    fi
+    echo "$execution_json"
+}
+
+function check_execution_block_number
+{
+    local f=$(get_config_file $1)
+    local http_port=$(init_http_port ${f})
+    local block_number_request=$(curl -s \
+                        -H "Content-Type: application/json" \
+                        -X POST \
+                        --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+                        127.0.0.1:${http_port})
+    if [ $? -eq 0 ]; then
+        local block_number=$(echo "$block_number_request" | grep -o '"result":"[^"]*"' | cut -d '"' -f 4)
+        local decimal_block_number=$(printf "%d" "$block_number")
+        if $3 && [ $decimal_block_number -eq 0 ]; then
+            info "Please wait for blok information."
+            exit 0
+        fi
+    else
+        info "The ${1} ${2} syncing block number request failed."
+        exit 1
+    fi
+}
+
+function check_consensus_peers_count
+{
+    local peers_count_request=$(curl -s 127.0.0.1:${ports[${1}.grpc-gateway-port]}/eth/v1/node/peer_count)
+    if [ $? -eq 0 ]; then
+        local peers_count=$(echo "$peers_count_request" | grep -o '"connected":"[^"]*"' | cut -d '"' -f 4)
+        if [ ! -z "$peers_count" ]; then
+            if [ $peers_count -eq 0 ]; then
+                info "The ${1} ${2} is not syncing. Waiting to connect with peers."
+                exit 0
+            fi
+        else
+            info "The ${2} peers not found. Please wait."
+            exit 0
+        fi
+    else
+        info "The ${1} ${2} peer count request failed."
+        exit 1
+    fi
+}
 
 function execution_syncing_status
 {
-    init_network
-    http_port=""
-    if [ "oasis" == "$network" ]; then
-        http_port="8547"
-    else
-        http_port="8545"
-    fi
-    if [ "$execution_pid" ]; then
-        info "$(green "${execution} running: pid=${execution_pid}")"
-        execution_json=$(curl -s \
-        -H "Content-Type: application/json" \
-        -X POST \
-        --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
-        127.0.0.1:${http_port})
+    if [ ${project_pids["${1}_${2}_pid"]} ]; then
+        local flag=true
+        check_config
+        check_execution_peers_count $1 $2
+        execution_json=$(get_execution_json $1 $2)
+        r=$(echo "$execution_json" | grep -q '"result":false')
+        if [ $? -eq 1 ]; then
+            flag=false
+        fi
+        check_execution_block_number $1 $2 $flag
         if echo "$execution_json" | grep -q '"result":false'; then
-            info "$(green "${execution} synced")"
+            info "The ${1} ${2} full synced."
         else
-            highestBlock=$(echo "$execution_json" | grep -o '"highestBlock":"[^"]*"' | cut -d '"' -f 4)
-            currentBlock=$(echo "$execution_json" | grep -o '"currentBlock":"[^"]*"' | cut -d '"' -f 4)
-            decimal_highestBlock=$(printf "%d" "$highestBlock")
-            decimal_currentBlock=$(printf "%d" "$currentBlock")
-            result=$((decimal_currentBlock * 100 / decimal_highestBlock))
-            info "$(green "${execution} is syncing $result%")"
+            local highest_block=$(echo "$execution_json" | grep -o '"highestBlock":"[^"]*"' | cut -d '"' -f 4)
+            local current_block=$(echo "$execution_json" | grep -o '"currentBlock":"[^"]*"' | cut -d '"' -f 4)
+            local decimal_highest_block=$(printf "%d" "$highest_block")
+            local decimal_current_block=$(printf "%d" "$current_block")
+            local result=$((decimal_current_block * 100 / decimal_highest_block))
+            info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}" | current block=${decimal_current_block} | highest block=${decimal_highest_block} | syncing=${result}%."
         fi
     else
-        info "$(blue "${execution} stopped")"
+        info "The ${1} ${2} stopped."
+    fi
+}
+
+function consensus_syncing_status
+{
+    if [ ${project_pids["${1}_${2}_pid"]} ]; then
+        check_consensus_peers_count $1 $2
+        local consensus_json=$(curl -s 127.0.0.1:${ports[${1}.grpc-gateway-port]}/eth/v1/node/syncing)
+        if [ $? -eq 0 ]; then
+            if echo "$consensus_json" | grep -q '"is_syncing":false'; then
+                info "The ${1} ${2} full synced."
+            else
+                local head_slot=$(echo "$consensus_json" | grep -o '"head_slot":"[^"]*"' | cut -d '"' -f 4)
+                local sync_distance=$(echo "$consensus_json" | grep -o '"sync_distance":"[^"]*"' | cut -d '"' -f 4)
+                local block_sum=$((head_slot + sync_distance))
+                if [ ! -z "$block_sum" ] && [ $block_sum -ne 0 ]; then
+                    local result=$((head_slot * 100 / block_sum))
+                    info "The ${1} ${2} running: pid="${project_pids[${1}_${2}_pid]}" | syncing=${result}%."
+                else
+                    info "Please wait ${2} blok information."
+                fi
+            fi
+        else
+            info "The ${1} ${2} syncing status request failed."
+            exit 1
+        fi
+    else
+        info "The ${1} ${2} stopped."
     fi
 }
 
 function status_function
 {
-    execution_syncing_status
+    local c=0
+    local n=""
+    local p=$(pidof $projects)
+    if [ ! -z "$p" ]; then
+        for i in $network_name; do
+            local o=$(ps -fp $p)
+            if echo "$o" | grep -q $i; then
+                ((c=c+1))
+                n=$i
+            fi
+        done
+    fi
+    if [ $c -eq 0 ]; then
+        info "There is no running process."
+        exit 0
+    elif [ $c -eq 1 ]; then
+        for i in $projects; do
+            !(${i}_syncing_status $n $i)
+        done
+    else
+        for i in $network_name; do
+            for j in $projects; do
+                !(${j}_syncing_status $i $j)
+            done
+        done
+    fi
+}
+
+function validator_exit_function
+{
+    check_validator_is_active
+	check_network
+	check_public_keys
+	local o = ""
+	if [[ "all" = ${public_keys} ]]; then
+		o="--exit-all"
+	else
+		o="--public-keys ${public_keys}"
+	fi
+	$path/Bahamut/$projects accounts voluntary-exit $o \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet"
+}
+
+function validator_list_function
+{
+    check_validator_is_active
+	check_network
+	$path/Bahamut/$projects accounts list \
+		--${network} \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet"
+}
+
+function validator_remove_function
+{
+    check_validator_is_active
+	check_network
+	check_public_keys
+	$path/Bahamut/$projects accounts delete \
+		--${network} \
+		--delete-public-keys="${public_keys}" \
+		--accept-terms-of-use \
+		--wallet-dir="$path/Bahamut/${network}/datadirs/validator/wallet"
+}
+
+function reset_function
+{
+    local p=""
+    check_update_and_reset_dependency
+    if [ -z "$network" ]; then
+        p="Network not specified. Do you want to drop horizon and sahara entire contents of databases? Enter:"
+        network="sahara horizon"
+    else
+        p="Do you want to drop ${network} entire contents of database? Enter:"
+    fi
+    c=$(read_confirmation "$(conf "${p}")" "Y/n")
+    if [ "Y" == "$c" ]; then
+        for i in $network; do
+            for j in $projects; do
+                if [ -z "$(ls -A $path/Bahamut/${i}/datadirs/${j}/)" ]; then
+                    info "The ${i} ${j} databases have been cleared."
+                else
+                    rm -rf $path/Bahamut/${i}/datadirs/${j}/*
+                    if [ $? -eq 0 ]; then
+                        info "The ${i} ${j} database cleanup completed successfully."
+                    else
+                        error "Failed to clear databaes ${i} ${j}."
+                        exit 1
+                    fi
+                fi
+            done
+        done
+    else
+        info "Deny action with reset."
+        exit 0
+    fi
 }
 
 ${action}_function
